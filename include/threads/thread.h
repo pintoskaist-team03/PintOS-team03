@@ -29,7 +29,7 @@ typedef int tid_t;
 #define PRI_MAX 63                      /* Highest priority. */
 
 /* A kernel thread or user process.
- *
+스레드 구조는 자체는 맨 아래 (offset 0) 위치, 페이지 나머지 부분은 스데르 커널 스택을 위해 예악되어 있고, kernel static은 downward
  * Each thread structure is stored in its own 4 kB page.  The
  * thread structure itself sits at the very bottom of the page
  * (at offset 0).  The rest of the page is reserved for the
@@ -66,6 +66,7 @@ typedef int tid_t;
  *       the kernel stack.  Our base `struct thread' is only a
  *       few bytes in size.  It probably should stay well under 1
  *       kB.
+  '구조체 스레드'가 너무 커지지 않도록 해야 합니다. 그렇게 되면 커널 스택을 위한 공간이 충분하지 않습니다
  *
  *    2. Second, kernel stacks must not be allowed to grow too
  *       large.  If a stack overflows, it will corrupt the thread
@@ -73,6 +74,9 @@ typedef int tid_t;
  *       structures or arrays as non-static local variables.  Use
  *       dynamic allocation with malloc() or palloc_get_page()
  *       instead.
+ 커널 스택이 너무 커지지 않도록 해야 합니다.  스택이 오버플로되면 스레드 상태가 손상됩니다.  
+ 따라서 커널 함수는 큰 구조체나 배열을 비정적 로컬 변수로 할당해서는 안 됩니다.  
+ 대신 malloc() 또는 palloc_get_page()와 함께 동적 할당을 사용하세요.
  *
  * The first symptom of either of these problems will probably be
  * an assertion failure in thread_current(), which checks that
@@ -100,12 +104,12 @@ struct thread {
 	uint64_t *pml4;                     /* Page map level 4 */
 #endif
 #ifdef VM
-	/* Table for whole virtual memory owned by thread. */
+	/* Table for whole virtual memory owned by thread.: 가상 주소와 해당 주소에 매핑된 물리 페이지에 대한 정보를 저장 */
 	struct supplemental_page_table spt;
 #endif
 
 	/* Owned by thread.c. */
-	struct intr_frame tf;               /* Information for switching */
+	struct intr_frame tf;  /*인터럽트가 발생했을 때 스레드의 상태를 저장하기 위한 구조체:  Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
 };
 

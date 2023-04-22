@@ -126,7 +126,7 @@ intr_get_level (void) {
 
 /* Enables or disables interrupts as specified by LEVEL and
    returns the previous interrupt status. */
-enum intr_level
+enum intr_level //INTR_ON과 같으면 intr_enable()하고 이전 인터럽트 상태반환, 아니면 intr_disable()하고 이전 인터럽트 상태 반환
 intr_set_level (enum intr_level level) {
 	return level == INTR_ON ? intr_enable () : intr_disable ();
 }
@@ -264,7 +264,7 @@ intr_context (void) {
    returning from the interrupt.  May not be called at any other
    time. */
 void
-intr_yield_on_return (void) {
+intr_yield_on_return (void) { //인터럽트 핸들러가 인터럽트에서 반환하기 직전에 새로운 프로세스에 양보하도록 지시
 	ASSERT (intr_context ());
 	yield_on_return = true;
 }

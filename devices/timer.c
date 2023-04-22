@@ -11,7 +11,7 @@
 /* See [8254] for hardware details of the 8254 timer chip. */
 
 #if TIMER_FREQ < 19
-#error 8254 timer requires TIMER_FREQ >= 19
+#error 8254 timer requires TIMER_FREQ >= 19 
 #endif
 #if TIMER_FREQ > 1000
 #error TIMER_FREQ <= 1000 recommended
@@ -38,11 +38,14 @@ timer_init (void) {
 	   nearest. */
 	uint16_t count = (1193180 + TIMER_FREQ / 2) / TIMER_FREQ;
 
+	//초당 11932번의 인터럽트가 발생하도록 8254 timer 칩을 구성
+
 	outb (0x43, 0x34);    /* CW: counter 0, LSB then MSB, mode 2, binary. */
 	outb (0x40, count & 0xff);
 	outb (0x40, count >> 8);
 
-	intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+	intr_register_ext (0x20, timer_interrupt, "8254 Timer"); //타이머 인터럽트를 핸들링할 함수인 timer_interrupt()를 등록
+//PIT가 초당 PIT_FREQ 번의 인터럽트를 발생시키도록 설정되며, 이 인터럽트를 핸들링할 timer_interrupt() 함수가 등록
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -84,17 +87,17 @@ timer_ticks (void) {
    should be a value once returned by timer_ticks(). */
 int64_t
 timer_elapsed (int64_t then) {
-	return timer_ticks () - then;
+	return timer_ticks () - then; //현재시간과 이전 시간을 비교해 경과 시간 리턴
 }
 
-/* Suspends execution for approximately TICKS timer ticks. */
+/* Suspends execution for approximately TICKS timer ticks. : ticks 만큼 sleep*/
 void
 timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	while (timer_elapsed (start) < ticks) //time_sleep이 실행되고 지난 tick < ticks 일때까지
+		thread_yield (); //실행할 새로운 스레드를 선택하는 스케쥴러의 역할
 }
 
 /* Suspends execution for approximately MS milliseconds. */

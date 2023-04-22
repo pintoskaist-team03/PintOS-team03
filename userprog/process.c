@@ -248,6 +248,7 @@ process_cleanup (void) {
 
 /* Sets up the CPU for running user code in the nest thread.
  * This function is called on every context switch. */
+ /*다음 스레드의 페이지 테이블을 활성화하고 인터럽트 처리에 사용할 커널 스택을 설정*/
 void
 process_activate (struct thread *next) {
 	/* Activate thread's page tables. */

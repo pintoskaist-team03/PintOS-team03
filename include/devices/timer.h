@@ -4,7 +4,7 @@
 #include <round.h>
 #include <stdint.h>
 
-/* Number of timer interrupts per second. */
+/* Number of timer interrupts per second. : 초당 인터럽트 횟수 */
 #define TIMER_FREQ 100
 
 void timer_init (void);
