@@ -27,6 +27,8 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static struct list sleep_list;
+
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -108,6 +110,7 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -589,4 +592,36 @@ allocate_tid (void) {
 	return tid;
 }
 
-//test
+void
+thread_sleep(int64_t start, int64_t ticks) {
+	struct thread *cur_thread = thread_current ();// 1. 현재 스레드를 호출
+	cur_thread->wake_time = ticks;
+	enum intr_level old_level; // 이전 인터럽트 상태 저장
+
+	ASSERT (!intr_context ());
+	old_level = intr_disable (); // 인터럽트 막아줌
+
+	if (cur_thread != idle_thread)
+		list_push_back (&sleep_list, &cur_thread->elem);
+		// list_insert_ordered(&sleep_list, &cur_thread->elem,)
+	do_schedule (THREAD_BLOCKED);
+	intr_set_level (old_level);
+}
+
+void
+thread_wake(int64_t ticks) {
+	enum intr_level old_level;
+	old_level = intr_disable ();
+
+	if(list_empty(&sleep_list)){
+		return;
+	}
+	struct thread *front = list_entry(list_front(&sleep_list), struct thread, elem);
+	
+	if (ticks >= front->wake_time) {
+		struct thread *awake_thread = list_entry(list_pop_front(&sleep_list), struct thread, elem);
+		list_push_back(&ready_list, &awake_thread->elem);
+		
+	}
+	intr_set_level (old_level);
+}
