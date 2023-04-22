@@ -96,8 +96,10 @@ timer_sleep (int64_t ticks) {
 	int64_t start = timer_ticks ();
 
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks) //time_sleep이 실행되고 지난 tick < ticks 일때까지
-		thread_yield (); //실행할 새로운 스레드를 선택하는 스케쥴러의 역할
+	thread_sleep(ticks, start); //재우기
+
+	// while (timer_elapsed (start) < ticks) //time_sleep이 실행되고 지난 tick < ticks 일때까지
+	// 	thread_yield (); //실행할 새로운 스레드를 선택하는 스케쥴러의 역할
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -129,6 +131,7 @@ static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
 	thread_tick ();
+	thread_wake(ticks);	
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer

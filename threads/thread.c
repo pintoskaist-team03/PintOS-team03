@@ -11,6 +11,7 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "include/devices/timer.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -27,6 +28,7 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static struct list sleep_list;
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -62,6 +64,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+void thread_sleep(int64_t ticks, int64_t start);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -81,6 +84,43 @@ static tid_t allocate_tid (void);
 // Because the gdt will be setup after the thread_init, we should
 // setup temporal gdt first.
 static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
+
+void thread_sleep(int64_t ticks, int64_t start){
+	//1. 현재 스레드 호출하기
+	//2. 현재 스레드의 구조체 wake_time = timer.tick()+ticks 대입하기(현재시간 + 지정된 sleep ticks 파라미터)
+	//3. sleepList에 연결하기 : list_push_back (&ready_list, &t->elem); 
+	//4. do_schedule() : //다음 스레드 예약하기...
+	struct thread *curr = thread_current();
+	enum intr_level old_level;
+
+	old_level = intr_disable();
+	curr->wake_time = start+ticks; // timer_ticks()는 필요없음
+
+	ASSERT(!intr_context());
+	if(curr != idle_thread){
+		list_push_back(&sleep_list,&curr->elem);
+	}
+	do_schedule(THREAD_BLOCKED); //스케줄러가 다음에 실행할 스레드 선택
+	intr_set_level(old_level);
+}
+
+void thread_wake(int64_t ticks){
+	enum intr_level old_level;
+	
+	old_level = intr_disable();
+
+	if(list_empty(&sleep_list)){
+		return;
+	}
+	//struct list_elem *front = list_front(&sleep_list); //이 list_elem에  thread 구조체에 접근해야하는데...
+	struct thread *front = list_entry(list_front (&sleep_list), struct thread, elem);
+	if(ticks >= front->wake_time) {
+		struct thread *awake_thread = list_entry(list_pop_front(&sleep_list), struct thread, elem);
+		list_push_back(&ready_list, &awake_thread->elem);
+	}
+	intr_set_level(old_level);	
+}
+
 
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
@@ -112,6 +152,8 @@ thread_init (void) {
 	lock_init (&tid_lock);
 	list_init (&ready_list);
 	list_init (&destruction_req);
+	list_init (&sleep_list);
+	
 
 	/* Set up a thread structure for the running thread. */
 	initial_thread = running_thread ();
