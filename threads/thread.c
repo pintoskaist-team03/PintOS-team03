@@ -38,6 +38,7 @@ static struct thread *initial_thread;
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
+static struct lock sleep_lock; //sleep 뮤텍스
 
 /* Thread destruction requests */
 static struct list destruction_req;
@@ -99,24 +100,38 @@ void thread_sleep(int64_t ticks, int64_t start){
 	ASSERT(!intr_context());
 	if(curr != idle_thread){
 		list_push_back(&sleep_list,&curr->elem);
+		do_schedule(THREAD_BLOCKED); //스케줄러가 다음에 실행할 스레드 선택		
 	}
-	do_schedule(THREAD_BLOCKED); //스케줄러가 다음에 실행할 스레드 선택
+	else{
+		do_schedule(THREAD_READY);
+	}
 	intr_set_level(old_level);
 }
 
 void thread_wake(int64_t ticks){
 	enum intr_level old_level;
-	
+	struct list_elem *e;
+	struct check_thread *t;
+
 	old_level = intr_disable();
 
 	if(list_empty(&sleep_list)){
 		return;
 	}
-	//struct list_elem *front = list_front(&sleep_list); //이 list_elem에  thread 구조체에 접근해야하는데...
-	struct thread *front = list_entry(list_front (&sleep_list), struct thread, elem);
-	if(ticks >= front->wake_time) {
-		struct thread *awake_thread = list_entry(list_pop_front(&sleep_list), struct thread, elem);
-		list_push_back(&ready_list, &awake_thread->elem);
+
+	for(e=list_front(&sleep_list); e != list_end(&sleep_list);){
+		struct thread *front = list_entry(e, struct thread, elem);
+		
+		if(ticks < front->wake_time){
+			continue;
+		}
+
+		struct thread *awake_thread = list_entry(e, struct thread, elem);
+		awake_thread->status = THREAD_READY;
+		list_push_back(&ready_list, &awake_thread->elem);	
+		if(e->next == NULL){
+			return;
+		}
 	}
 	intr_set_level(old_level);	
 }
