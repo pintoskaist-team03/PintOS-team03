@@ -93,14 +93,27 @@ void thread_sleep(int64_t ticks, int64_t start){
 	//4. do_schedule() : //다음 스레드 예약하기...
 	struct thread *curr = thread_current();
 	enum intr_level old_level;
+ 	struct list_elem *e;
 
 	old_level = intr_disable();
 	curr->wake_time = start+ticks; // timer_ticks()는 필요없음
 
 	ASSERT(!intr_context());
 	if(curr != idle_thread){
-		list_push_back(&sleep_list,&curr->elem);
-		do_schedule(THREAD_BLOCKED); //스케줄러가 다음에 실행할 스레드 선택		
+		if(list_empty(&sleep_list)){
+			list_push_back(&sleep_list,&curr->elem);
+			do_schedule(THREAD_BLOCKED);
+		}
+		else{
+			for(e = list_begin(&sleep_list); e!= list_end(&sleep_list); e = list_next(e)){
+				struct thread *sleep_thread = list_entry(e, struct thread, elem);
+				if(curr->wake_time < sleep_thread->wake_time){
+					list_insert(e, &curr->elem);
+					do_schedule(THREAD_BLOCKED);
+					break;
+				}
+			}
+		}
 	}
 	else{
 		do_schedule(THREAD_READY);
@@ -119,19 +132,17 @@ void thread_wake(int64_t ticks){
 		return;
 	}
 
-	for(e=list_front(&sleep_list); e != list_end(&sleep_list);){
+	for(e=list_begin(&sleep_list); e != list_end(&sleep_list); e=list_next(e)){
+
 		struct thread *front = list_entry(e, struct thread, elem);
 		
 		if(ticks < front->wake_time){
-			continue;
+			break;
 		}
 
 		struct thread *awake_thread = list_entry(e, struct thread, elem);
-		awake_thread->status = THREAD_READY;
-		list_push_back(&ready_list, &awake_thread->elem);	
-		if(e->next == NULL){
-			return;
-		}
+		list_remove(e);
+		thread_unblock(awake_thread);
 	}
 	intr_set_level(old_level);	
 }
