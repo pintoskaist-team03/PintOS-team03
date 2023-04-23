@@ -119,25 +119,6 @@ void thread_sleep(int64_t ticks, int64_t start){
 	intr_set_level(old_level);
 }
 
-// void thread_wake(int64_t ticks) {
-//     enum intr_level old_level = intr_disable();
-
-//     while (!list_empty(&sleep_list)) {
-//         struct list_elem *e = list_front(&sleep_list);
-//         struct thread *t = list_entry(e, struct thread, elem);
-
-//         if (t->wake_time > ticks) {
-//             break;
-//         }
-// 		struct thread *awake_thread = list_entry(e, struct thread, elem);
-// 		list_remove(e);
-// 		thread_unblock(awake_thread);
-//         // list_pop_front(&sleep_list);
-//         // thread_unblock(t);
-//     }
-
-//     intr_set_level(old_level);
-// }
 
 void thread_wake(int64_t ticks){
 	enum intr_level old_level;
@@ -148,19 +129,19 @@ void thread_wake(int64_t ticks){
 	if(list_empty(&sleep_list)){
 		return;
 	}	
+	struct thread *chk_front = list_entry(list_front(&sleep_list),struct thread, elem);
+	if(ticks < chk_front->wake_time) return;
 
 	for(e=list_front(&sleep_list); e != list_end(&sleep_list);){
 		struct thread *front = list_entry(e, struct thread, elem);
-		
 		if(ticks < front->wake_time){
 			break;
 		}
 
 		struct thread *awake_thread = list_entry(e, struct thread, elem);
-		e = list_remove(e);
+		e =list_remove(e);
 		awake_thread->status = THREAD_READY;
 		list_push_back(&ready_list, &awake_thread->elem); 
-		// 한 후에 'e'는 readylist에 마지막node를 가리키고, list_next(e)는  
 	}
 	intr_set_level(old_level);	
 }
