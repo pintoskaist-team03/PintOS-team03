@@ -618,57 +618,28 @@ void thread_sleep(int64_t start, int64_t ticks) {
 
 void thread_wake(int64_t ticks) {
     enum intr_level old_level = intr_disable();
+    // wake 앞에 맨 앞의 최소값(front)을 찾아서 tick가 최소값보다 작으면 리턴 (while문 돌지 않음)
+    if (list_empty(&sleep_list)) {
+        intr_set_level(old_level);
+        return;
+    }
+
+    struct list_elem *e = list_front(&sleep_list);
+    struct thread *t = list_entry(e, struct thread, elem);
+    if (t->wake_time > ticks) {
+        intr_set_level(old_level);
+        return;
+    }
 
     while (!list_empty(&sleep_list)) {
-        struct list_elem *e = list_front(&sleep_list);
-        struct thread *t = list_entry(e, struct thread, elem);
-
-        if (t->wake_time > ticks) {
+        e = list_front(&sleep_list);
+        struct thread *awake_thread = list_entry(e, struct thread, elem);
+        if (awake_thread->wake_time > ticks) {
             break;
         }
-		struct thread *awake_thread = list_entry(e, struct thread, elem);
-		list_remove(e);
-		thread_unblock(awake_thread);
-        // list_pop_front(&sleep_list);
-        // thread_unblock(t);
+        list_remove(e);
+        thread_unblock(awake_thread);
     }
 
     intr_set_level(old_level);
 }
-// void
-// thread_sleep(int64_t start, int64_t ticks) {
-// 	struct thread *cur_thread = thread_current ();// 1. 현재 스레드를 호출
-// 	cur_thread->wake_time = ticks;
-// 	enum intr_level old_level; // 이전 인터럽트 상태 저장
-
-// 	ASSERT (!intr_context ());
-// 	old_level = intr_disable (); // 인터럽트 막아줌
-
-// 	if (cur_thread != idle_thread)
-// 		//list_push_back (&sleep_list, &cur_thread->elem);
-// 		list_insert_ordered(&sleep_list, &cur_thread->elem, less_by_wake_time,NULL);
-// 	do_schedule (THREAD_BLOCKED);
-// 	intr_set_level (old_level);
-// }
-
-// void
-// thread_wake(int64_t ticks) {
-// 	enum intr_level old_level;
-// 	old_level = intr_disable ();
-// 	struct list_elem *e;
-
-// 	if(list_empty(&sleep_list)){
-// 		return;
-// 	}
-	
-// 	for (e = list_begin(&sleep_list); e != list_end(&sleep_list); e = list_next(e)) {
-// 		struct thread *t = list_entry(e, struct thread, elem);
-// 		if (t->wake_time > ticks) {
-// 			break;
-// 		}
-// 		struct thread *awake_thread = list_entry(e, struct thread, elem);
-// 		list_remove(e);
-// 		thread_unblock(awake_thread);
-// 	}
-// 	intr_set_level (old_level);
-// }
