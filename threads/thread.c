@@ -27,6 +27,8 @@
 /* List of processes in THREAD_READY state, that is, processes
    that are ready to run but not actually running. */
 static struct list ready_list;
+static struct list sleep_list;
+
 
 /* Idle thread. */
 static struct thread *idle_thread;
@@ -108,6 +110,7 @@ thread_init (void) {
 	/* Init the globla thread context */
 	lock_init (&tid_lock);
 	list_init (&ready_list);
+	list_init (&sleep_list);
 	list_init (&destruction_req);
 
 	/* Set up a thread structure for the running thread. */
@@ -587,4 +590,56 @@ allocate_tid (void) {
 	lock_release (&tid_lock);
 
 	return tid;
+}
+
+bool less_by_wake_time(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	struct thread *thread_a = list_entry(a, struct thread, elem);
+	struct thread *thread_b = list_entry(b, struct thread, elem);
+	return thread_a->wake_time < thread_b->wake_time;
+}
+
+
+void thread_sleep(int64_t start, int64_t ticks) {
+    struct thread *cur_thread = thread_current ();
+    cur_thread->wake_time = start + ticks;
+
+    enum intr_level old_level = intr_disable();
+
+    ASSERT(!intr_context());
+
+    if (cur_thread != idle_thread) {
+        list_insert_ordered(&sleep_list, &cur_thread->elem, &less_by_wake_time, NULL);
+    }
+
+    thread_block();
+
+    intr_set_level(old_level);
+}
+
+void thread_wake(int64_t ticks) {
+    enum intr_level old_level = intr_disable();
+    // wake 앞에 맨 앞의 최소값(front)을 찾아서 tick가 최소값보다 작으면 리턴 (while문 돌지 않음)
+    if (list_empty(&sleep_list)) {
+        intr_set_level(old_level);
+        return;
+    }
+
+    struct list_elem *e = list_front(&sleep_list);
+    struct thread *t = list_entry(e, struct thread, elem);
+    if (t->wake_time > ticks) {
+        intr_set_level(old_level);
+        return;
+    }
+
+    while (!list_empty(&sleep_list)) {
+        e = list_front(&sleep_list);
+        struct thread *awake_thread = list_entry(e, struct thread, elem);
+        if (awake_thread->wake_time > ticks) {
+            break;
+        }
+        list_remove(e);
+        thread_unblock(awake_thread);
+    }
+
+    intr_set_level(old_level);
 }
