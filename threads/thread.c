@@ -86,6 +86,7 @@ void thread_sleep(int64_t ticks, int64_t start);
 // setup temporal gdt first.
 static uint64_t gdt[3] = { 0, 0x00af9a000000ffff, 0x00cf92000000ffff };
 
+
 void thread_sleep(int64_t ticks, int64_t start){
 	//1. 현재 스레드 호출하기
 	//2. 현재 스레드의 구조체 wake_time = timer.tick()+ticks 대입하기(현재시간 + 지정된 sleep ticks 파라미터)
@@ -105,7 +106,7 @@ void thread_sleep(int64_t ticks, int64_t start){
 			do_schedule(THREAD_BLOCKED);
 		}
 		else{
-			for(e = list_begin(&sleep_list); e!= list_end(&sleep_list); e = list_next(e)){
+			for(e = list_front(&sleep_list); e!= list_end(&sleep_list); e = list_next(e)){
 				struct thread *sleep_thread = list_entry(e, struct thread, elem);
 				if(curr->wake_time < sleep_thread->wake_time){
 					list_insert(e, &curr->elem);
@@ -115,25 +116,40 @@ void thread_sleep(int64_t ticks, int64_t start){
 			}
 		}
 	}
-	else{
-		do_schedule(THREAD_READY);
-	}
 	intr_set_level(old_level);
 }
+
+// void thread_wake(int64_t ticks) {
+//     enum intr_level old_level = intr_disable();
+
+//     while (!list_empty(&sleep_list)) {
+//         struct list_elem *e = list_front(&sleep_list);
+//         struct thread *t = list_entry(e, struct thread, elem);
+
+//         if (t->wake_time > ticks) {
+//             break;
+//         }
+// 		struct thread *awake_thread = list_entry(e, struct thread, elem);
+// 		list_remove(e);
+// 		thread_unblock(awake_thread);
+//         // list_pop_front(&sleep_list);
+//         // thread_unblock(t);
+//     }
+
+//     intr_set_level(old_level);
+// }
 
 void thread_wake(int64_t ticks){
 	enum intr_level old_level;
 	struct list_elem *e;
-	struct check_thread *t;
 
 	old_level = intr_disable();
 
 	if(list_empty(&sleep_list)){
 		return;
-	}
+	}	
 
-	for(e=list_begin(&sleep_list); e != list_end(&sleep_list); e=list_next(e)){
-
+	for(e=list_front(&sleep_list); e != list_end(&sleep_list);){
 		struct thread *front = list_entry(e, struct thread, elem);
 		
 		if(ticks < front->wake_time){
@@ -141,8 +157,10 @@ void thread_wake(int64_t ticks){
 		}
 
 		struct thread *awake_thread = list_entry(e, struct thread, elem);
-		list_remove(e);
-		thread_unblock(awake_thread);
+		e = list_remove(e);
+		awake_thread->status = THREAD_READY;
+		list_push_back(&ready_list, &awake_thread->elem); 
+		// 한 후에 'e'는 readylist에 마지막node를 가리키고, list_next(e)는  
 	}
 	intr_set_level(old_level);	
 }
