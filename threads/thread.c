@@ -65,6 +65,7 @@ static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
 
+static struct thread *get_highest_priority (void);
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -245,6 +246,18 @@ thread_unblock (struct thread *t) {
 	ASSERT (t->status == THREAD_BLOCKED);
 	list_push_back (&ready_list, &t->elem);
 	t->status = THREAD_READY;
+
+    struct thread *cur_thread = thread_current ();
+
+	ASSERT(cur_thread->status == THREAD_RUNNING);
+	
+	if(cur_thread->status == THREAD_RUNNING){
+		 if(cur_thread != idle_thread){
+			if(t->priority > cur_thread->priority){
+				thread_yield();
+			}
+		}
+	}
 	intr_set_level (old_level);
 }
 
@@ -315,6 +328,16 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	
+	struct thread *high_priority_thread = get_highest_priority();
+	if(new_priority < high_priority_thread->priority){
+		enum intr_level old_level = intr_disable();
+		//thread_yield();
+		if (thread_current () != idle_thread)
+			list_push_back (&ready_list, &thread_current ()->elem);
+		do_schedule (THREAD_READY);
+	 	intr_set_level(old_level);
+	 }
 }
 
 /* Returns the current thread's priority. */
@@ -414,6 +437,12 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->magic = THREAD_MAGIC;
 }
 
+bool less_by_sort_descending(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
+	struct thread *thread_a = list_entry(a, struct thread, elem);
+	struct thread *thread_b = list_entry(b, struct thread, elem);
+	return thread_a->priority > thread_b->priority;
+}
+
 /* Chooses and returns the next thread to be scheduled.  Should
    return a thread from the run queue, unless the run queue is
    empty.  (If the running thread can continue running, then it
@@ -423,9 +452,21 @@ static struct thread *
 next_thread_to_run (void) {
 	if (list_empty (&ready_list))
 		return idle_thread;
-	else
+	else{
+		list_sort(&ready_list, &less_by_sort_descending, NULL); //priority 내림차순
 		return list_entry (list_pop_front (&ready_list), struct thread, elem);
+	}	
 }
+
+static struct thread *get_highest_priority(void){
+	if(list_empty(&ready_list))
+		return idle_thread;
+	else{
+		list_sort(&ready_list, &less_by_sort_descending, NULL);
+		return list_entry (list_front (&ready_list), struct thread, elem);
+	}
+}
+
 
 /* Use iretq to launch the thread */
 void
@@ -464,7 +505,13 @@ do_iret (struct intr_frame *tf) {
 
    It's not safe to call printf() until the thread switch is
    complete.  In practice that means that printf()s should be
-   added at the end of the function. */
+   added at the end of the function. 
+      새 스레드의 페이지 테이블을 활성화하여 스레드를 전환하고, 이전 스레드가 죽어가고 있는 경우 스레드를 소멸합니다.
+이 함수를 호출할 때 방금 이전 스레드에서 전환했고 새 스레드가 이미 실행 중이며 인터럽트는 여전히 비활성화되어 있습니다.
+스레드 전환이 완료될 때까지 printf()를 호출하는 것은 안전하지 않습니다.  실제로는 함수 끝에 printf()를 를 함수 끝에 추가해야 합니다
+    */
+
+	/*컨텍스트 전환을 수행하여 새 스레드를 시작하는 스레드_런치 함수*/
 static void
 thread_launch (struct thread *th) {
 	uint64_t tf_cur = (uint64_t) &running_thread ()->tf;
@@ -475,7 +522,12 @@ thread_launch (struct thread *th) {
 	 * We first restore the whole execution context into the intr_frame
 	 * and then switching to the next thread by calling do_iret.
 	 * Note that, we SHOULD NOT use any stack from here
-	 * until switching is done. */
+	 * until switching is done. 
+	 * 주요 스위칭 로직입니다.
+	 * 먼저 전체 실행 컨텍스트를 인트라프레임에 복원하고 에 전체 실행 컨텍스트를 복원하고 do_iret을 호출하여 다음 스레드로 전환합니다.
+	 * 전환이 완료될 때까지 여기서부터 스택을 사용해서는 안 됩니다.
+	 * 스택을 사용해서는 안 됩니다.
+	 * */
 	__asm __volatile (
 			/* Store registers that will be used. */
 			"push %%rax\n"
@@ -527,36 +579,47 @@ thread_launch (struct thread *th) {
 /* Schedules a new process. At entry, interrupts must be off.
  * This function modify current thread's status to status and then
  * finds another thread to run and switches to it.
- * It's not safe to call printf() in the schedule(). */
+ (현재 스레드의 상태를 status로 수정한 다음 실행할 다른 스레드를 찾아서 전환)
+ * It's not safe to call printf() in the schedule(). 
+ */
+
+ /*현재 스레드가 타임 슬라이스를 완료하거나 차단된 후 CPU에서 다음 스레드가 실행되도록 예약하는 역할*/
 static void
 do_schedule(int status) {
 	ASSERT (intr_get_level () == INTR_OFF);
 	ASSERT (thread_current()->status == THREAD_RUNNING);
+	//소멸을 요청한 스레드 목록인 destruction_req 목록에 스레드가 있는지 확인
 	while (!list_empty (&destruction_req)) {
+		//존재하면 스레드의 스택 및 스레드 구조에 할당된 페이지를 해제
 		struct thread *victim =
 			list_entry (list_pop_front (&destruction_req), struct thread, elem);
 		palloc_free_page(victim);
 	}
 	thread_current ()->status = status;
-	schedule ();
+	schedule (); //cpu에서 실행할 다음 스레드 선택
 }
 
+
+/*실행할 다음 스레드를 선택하고 해당 스레드로 전환하는 역할
+현재 스레드가 새 스레드와 동일한 경우 컨텍스트 전환이 발생하지 않고 함수가 반환
+*/
 static void
 schedule (void) {
-	struct thread *curr = running_thread ();
-	struct thread *next = next_thread_to_run ();
+	struct thread *curr = running_thread (); //현재 실행중인 스레드
+	struct thread *next = next_thread_to_run (); // 실행할 다음 스레드
 
 	ASSERT (intr_get_level () == INTR_OFF);
-	ASSERT (curr->status != THREAD_RUNNING);
-	ASSERT (is_thread (next));
+	ASSERT (curr->status != THREAD_RUNNING); //RUNNING 아니어야 넘어감
+	ASSERT (is_thread (next)); //다음스레드가 유효한지 확인
 	/* Mark us as running. */
 	next->status = THREAD_RUNNING;
 
 	/* Start new time slice. */
-	thread_ticks = 0;
+	thread_ticks = 0; //thread_ticks 카운터 재설정
 
 #ifdef USERPROG
 	/* Activate the new address space. */
+	/*다음 스레드의 페이지 테이블을 활성화하고 인터럽트 처리에 사용할 커널 스택을 설정*/
 	process_activate (next);
 #endif
 
@@ -569,13 +632,15 @@ schedule (void) {
 		   The real destruction logic will be called at the beginning of the
 		   schedule(). */
 		if (curr && curr->status == THREAD_DYING && curr != initial_thread) {
+			//새 스레드로 전환하기 전에 이 함수는 먼저 현재 스레드가 죽어가고 있는지 확인
 			ASSERT (curr != next);
+			//죽어가고 있다면 스레드의 스택 페이지가 소멸되도록 표시
 			list_push_back (&destruction_req, &curr->elem);
 		}
 
 		/* Before switching the thread, we first save the information
 		 * of current running. */
-		thread_launch (next);
+		thread_launch (next);//새 스레드로 전환
 	}
 }
 
