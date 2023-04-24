@@ -64,6 +64,7 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
+static struct thread *search_highest_priority (void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -245,6 +246,17 @@ thread_unblock (struct thread *t) {
 	ASSERT (t->status == THREAD_BLOCKED);
 	list_push_back (&ready_list, &t->elem);
 	t->status = THREAD_READY;
+	// 지금 태어난 스레드가 우선순위가 현재 런하고 있는 스레드보다 크다면
+	// thread_yield()호출해서 양보
+	struct thread *curr = thread_current();
+
+	if (curr->status == THREAD_RUNNING) {
+		if (curr != idle_thread) {
+			if (t->priority > curr ->priority) {
+				thread_yield();
+			}
+		}	
+	}
 	intr_set_level (old_level);
 }
 
@@ -315,6 +327,14 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	// 현재 레디 리스트 안에서 제일 높은 우선순위를 가진 스레드를 찾는다
+	// new(현재)랑 제일 높은 애(전체 레디리스트에서)랑 비교해
+	// new가 제일 높은 애보다 작으면
+	// yield()호출
+	struct thread *highest_priority= search_highest_priority();
+	if (new_priority < highest_priority) {
+		thread_yield();
+	}
 }
 
 /* Returns the current thread's priority. */
@@ -432,6 +452,16 @@ next_thread_to_run (void) {
 	// 우선순위로 정렬
 		list_sort(&ready_list, &priority_ready_list, NULL);
 		return list_entry (list_pop_front (&ready_list), struct thread, elem);
+}
+
+static struct thread *
+search_highest_priority (void) {
+	if (list_empty (&ready_list))
+		return idle_thread;
+	else
+	// 우선순위로 정렬
+		list_sort(&ready_list, &priority_ready_list, NULL);
+		return list_entry (list_front (&ready_list), struct thread, elem);
 }
 
 /* Use iretq to launch the thread */
