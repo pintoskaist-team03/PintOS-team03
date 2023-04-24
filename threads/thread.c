@@ -332,10 +332,7 @@ thread_set_priority (int new_priority) {
 	struct thread *high_priority_thread = get_highest_priority();
 	if(new_priority < high_priority_thread->priority){
 		enum intr_level old_level = intr_disable();
-		//thread_yield();
-		if (thread_current () != idle_thread)
-			list_push_back (&ready_list, &thread_current ()->elem);
-		do_schedule (THREAD_READY);
+		thread_yield();
 	 	intr_set_level(old_level);
 	 }
 }

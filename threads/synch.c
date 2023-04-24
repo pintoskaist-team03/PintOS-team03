@@ -68,6 +68,7 @@ sema_down (struct semaphore *sema) {
 
 	while (sema->value == 0) {
 		list_push_back (&sema->waiters, &thread_current ()->elem);
+		//list_insert_ordered(&sema->waiters,&thread_current ()->elem, &less_by_sort_descending,NULL);//내림차순으로 정렬
 		thread_block ();
 	}
 	sema->value--;
@@ -110,12 +111,16 @@ sema_up (struct semaphore *sema) {
 	ASSERT (sema != NULL);
 
 	old_level = intr_disable ();
-	if (!list_empty (&sema->waiters))
+	sema->value++;	//원래는 if문 아래 있었는데, 현재 우선순위 스케줄링으로 thread_unblock()이 실행되면
+	//메인스레드가 sema_up() 실행되버림.. 
+	if (!list_empty (&sema->waiters)){
+		list_sort(&sema->waiters, &less_by_sort_descending, NULL);
 		thread_unblock (list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
-	sema->value++;
+	}
 	intr_set_level (old_level);
 }
+
 
 static void sema_test_helper (void *sema_);
 
@@ -242,6 +247,8 @@ struct semaphore_elem {
 	struct list_elem elem;              /* List element. */
 	struct semaphore semaphore;         /* This semaphore. */
 };
+//조건 변수를 사용하여 다른 스레드가 조건을 충족할 때까지 대기하거나, 
+//다른 스레드를 깨워 조건을 충족시키도록 알릴 수 있습니다.
 
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
@@ -275,7 +282,7 @@ cond_init (struct condition *cond) {
    we need to sleep. */
 void
 cond_wait (struct condition *cond, struct lock *lock) {
-	struct semaphore_elem waiter;
+	struct semaphore_elem waiter; //대기하고 있는 스레드
 
 	ASSERT (cond != NULL);
 	ASSERT (lock != NULL);
