@@ -30,11 +30,9 @@ static struct list ready_list;
 static struct list sleep_list;
 
 
-/* Idle thread. */
-static struct thread *idle_thread;
 
-/* Initial thread, the thread running init.c:main(). */
-static struct thread *initial_thread;
+
+
 
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
@@ -439,6 +437,8 @@ init_thread (struct thread *t, const char *name, int priority) {
 	/*danate를 위한 구조체 elem 추가 초기화*/
 	list_init(&t->donate_list); //donate_list 초기화
 	t->origin_priority = priority;
+	list_init(&t->lock_list);
+	t->request_lock = NULL;
 
 }
 

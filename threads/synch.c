@@ -31,6 +31,9 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include <list.h>
+
+
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
@@ -67,8 +70,8 @@ sema_down (struct semaphore *sema) {
 	old_level = intr_disable ();
 
 	while (sema->value == 0) {
-		list_push_back (&sema->waiters, &thread_current ()->elem);
-		//list_insert_ordered(&sema->waiters,&thread_current ()->elem, &less_by_sort_descending,NULL);//내림차순으로 정렬
+		//list_push_back (&sema->waiters, &thread_current ()->elem);
+		list_insert_ordered(&sema->waiters,&thread_current ()->elem, &less_by_sort_descending,NULL);//내림차순으로 정렬
 		thread_block ();
 	}
 	sema->value--;
@@ -114,9 +117,10 @@ sema_up (struct semaphore *sema) {
 	sema->value++;	//원래는 if문 아래 있었는데, 현재 우선순위 스케줄링으로 thread_unblock()이 실행되면
 	//메인스레드가 sema_up() 실행되버림.. 
 	if (!list_empty (&sema->waiters)){
-		list_sort(&sema->waiters, &less_by_sort_descending, NULL);
-		thread_unblock (list_entry (list_pop_front (&sema->waiters),
-					struct thread, elem));
+		//list_sort(&sema->waiters, &less_by_sort_descending, NULL); //->일단 지움 인터럽트 에러남
+		struct thread *get_lock_thread = list_entry (list_pop_front (&sema->waiters),struct thread, elem);
+		thread_unblock(get_lock_thread);
+	
 	}
 	intr_set_level (old_level);
 }
@@ -193,15 +197,24 @@ lock_acquire (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
+	struct thread *cur_thread = thread_current();
 
 	/*현재 스레드A가 lock_a점유, 스레드B가 lock_a 요청하면 sema_down에서 waiters로 들어감
 	들어가기전에 기부함
 	if(lock->holder != null) ?? / if(lock->holder->priority <cur->priority)인 경우
 	*/
-
-
+	if (cur_thread != idle_thread && cur_thread != initial_thread)
+	{
+		if(lock->holder != NULL){
+			if(lock->holder->priority < thread_current()->priority){
+				priority_danate(lock, &cur_thread);
+			}
+		}
+	}
 	sema_down (&lock->semaphore);
 	lock->holder = thread_current ();
+
+	//list_push_back(&lock->holder->lock_list,&lock->lock_elem); //현재 보유 스레드에 저장
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -233,10 +246,41 @@ void
 lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
+	/*1. 현재 release예정인 lock->holder 스레드 저장*/
+	struct thread *prev_lockHolder = lock->holder;
 
+	size_t lockcnt = list_size(&prev_lockHolder->lock_list);
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
-}
+
+	if(list_empty(&prev_lockHolder->donate_list))
+		return;
+
+	//2. 새로 lock 획득한 thread 저장
+	// if(thread_current () != idle_thread && thread_current() != initial_thread){
+	// 	struct thread *new_lockHolder = lock->holder;
+	// 	struct list_elem *e;
+	// 	if(lockcnt == 0){
+	// 		// 2-1. 가지고 있는 lock 없음->donate_list 다 제거
+	// 		while(list_empty(&prev_lockHolder->donate_list)){
+	// 			list_pop_front(&prev_lockHolder->donate_list);
+	// 		}
+	// 		// 2-2. 원래 priority로 저장해줌
+	// 		prev_lockHolder->priority = prev_lockHolder->origin_priority;
+	// 	}
+	// 	else{
+	// 		for(e=list_begin(&prev_lockHolder->donate_list);e != list_end(&prev_lockHolder->donate_list);){
+	// 			struct thread *tmp =list_entry(e,struct thread, donate_elem);
+	// 			e=list_next(&prev_lockHolder->donate_list);
+	// 			if(tmp == new_lockHolder){
+	// 				list_remove(e);
+	// 				struct thread *tmp_front= list_entry(list_front(&prev_lockHolder->donate_list),struct thread,donate_elem); 
+	// 				prev_lockHolder->priority = tmp_front->priority;
+	// 			}
+	// 		}
+	// 	}
+	// }
+} 
 
 /* Returns true if the current thread holds LOCK, false
    otherwise.  (Note that testing whether some other thread holds
@@ -249,13 +293,44 @@ lock_held_by_current_thread (const struct lock *lock) {
 }
 
 /*donate 관련 함수 추가*/
-void priority_danate(struct lock *lock){
-	struct thread *cur_thread = thread_current();
-	struct thread *cur_lock_holder = lock->holder;
+void priority_danate(struct lock *lock, struct thread *cur_thread){
+	int64_t old_level = intr_disable();
 
-	//1. cur_thread의 request_lock_holder 를 holder로 초기화
-	cur_thread->request_lock_holder = cur_lock_holder;
-	//2. cur_lock_holder의 우선순위를 
+	cur_thread->request_lock = lock;
+
+	//list_push_front(&(lock->holder->donate_list),&cur_thread->donate_elem);
+	list_insert_ordered(&lock->holder->donate_list,&cur_thread->donate_elem, &less_by_sort_descending,NULL);
+	//lock->holder->priority = list_entry(list_begin(&lock->holder->request_lock), struct thread, donate_elem) -> priority;
+	
+	if (lock->holder->request_lock == NULL){
+		intr_set_level(old_level);
+		return;
+	}
+	intr_set_level(old_level);
+	priority_danate(&lock->holder->request_lock,lock->holder);
+
+	// struct thread *cur_lock_holder = lock->holder;
+	// enum intr_level old_level = intr_disable();
+
+	// //2. cur_lock_holder의 우선순위를 cur_thread로 업데이트
+	// cur_lock_holder->priority = cur_thread->priority;
+	// //3. 기부 받았으니 donate_list에 저장
+	// list_insert_ordered(&cur_lock_holder->donate_list,&cur_thread->donate_elem, &less_by_sort_descending,NULL);
+	// //list_push_back(&cur_lock_holder->donate_list,&cur_thread->donate_elem);
+
+	// if(cur_lock_holder == NULL || cur_lock_holder->request_lock == NULL){
+	// 	intr_set_level(old_level);
+	// 	return;
+	// }
+	// intr_set_level(old_level);
+	// priority_danate(&lock->holder->request_lock,lock->holder);
+
+	// if(list_size(&cur_lock_holder->donate_list) > 1){
+	// 	struct thread *next_thread = list_entry(list_begin(&cur_lock_holder->donate_list), struct thread, donate_elem);
+	// 	intr_set_level(old_level);
+	// 	priority_danate(lock,next_thread);
+	// }
+	// intr_set_level(old_level);
 }
 
 

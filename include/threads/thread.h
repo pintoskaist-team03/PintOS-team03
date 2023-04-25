@@ -9,6 +9,9 @@
 #include "vm/vm.h"
 #endif
 
+static struct thread *idle_thread;
+/* Initial thread, the thread running init.c:main(). */
+static struct thread *initial_thread;
 
 /* States in a thread's life cycle. */
 enum thread_status {
@@ -97,14 +100,16 @@ struct thread {
 	struct list_elem elem;              /* List element. */
 
 	/*donate를 위한 구조체 요소 추가 - list일 필요없음 */
-	struct thread *request_lock_holder; // 내가 요청한 lock를 가지고 있는 스레드를 저장
+	struct lock *request_lock; // 내가 요청한 lock를 저장
 	int origin_priority; //기부 받기 전 priority
 
 	/*장부임(우선순위빌려준 애들을 list에 담음) - 갚을 예정*/
-	struct list_elem donate_priority_elem;
+	struct list_elem donate_elem;
 	struct list donate_list;
+	/*보유한 lock list*/
+	struct list lock_list;
 
-#ifdef USERPROG
+#ifdef USERPROG 
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
 #endif
@@ -117,6 +122,9 @@ struct thread {
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
 };
+
+
+
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.

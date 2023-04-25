@@ -1,5 +1,6 @@
 #include "list.h"
 #include "../debug.h"
+#include "threads/interrupt.h"
 
 /* Our doubly linked lists have two header elements: the "head"
    just before the first element and the "tail" just after the
@@ -419,7 +420,7 @@ void
 list_insert_ordered (struct list *list, struct list_elem *elem,
 		list_less_func *less, void *aux) {
 	struct list_elem *e;
-
+	ASSERT (intr_get_level () == INTR_OFF);
 	ASSERT (list != NULL);
 	ASSERT (elem != NULL);
 	ASSERT (less != NULL);
