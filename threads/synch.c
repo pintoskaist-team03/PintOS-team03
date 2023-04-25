@@ -129,8 +129,11 @@ sema_up (struct semaphore *sema) {
 	old_level = intr_disable ();
 	sema->value++; //////////
 	if (!list_empty (&sema->waiters))
+	{
+		list_sort(&sema->waiters,&search_sema_priority,NULL);
 		thread_unblock (list_entry (list_pop_front (&sema->waiters),
 					struct thread, elem));
+	}
 	intr_set_level (old_level);
 }
 
@@ -205,9 +208,22 @@ lock_acquire (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
-
+	// 현재 스레드가 lock을 가지고 있고,
+	// 현재 스레드의 우선순위가 들어오는 스레드보다 작다면 
+	// donation 해야함
+	struct thread *curr = thread_current();
+	if (lock->holder) {
+		curr->waiting_lock = lock; // 현재 스레드가 왜 기부하는지(어떤 lock 기다리는지) 저장
+		//printf("들어왔니\n");
+		list_insert_ordered(&lock->holder->donation_list, &(curr->donation_elem), 
+							&high_donation_priority, NULL);
+		//printf("정렬했니\n");
+		donate_priority();
+	}
 	sema_down (&lock->semaphore);
-	lock->holder = thread_current ();
+
+	curr->waiting_lock = NULL; // 기부했으면 지워줌
+	lock->holder = curr;
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -229,6 +245,31 @@ lock_try_acquire (struct lock *lock) {
 	return success;
 }
 
+// donation list에서 스레드 제거하는 함수
+void remove_with_lock(struct lock *lock) {
+	struct list_elem *e;
+	struct thread *curr = thread_current();
+
+	for (e = list_begin(&curr->donation_list); e != list_end(&curr->donation_list); e = list_next(e)) {
+		struct thread *t = list_entry(e, struct thread, donation_elem);
+		if (t->waiting_lock == lock)
+			list_remove(&t->donation_elem);
+	}
+}
+
+// donation_list에서 우선순위를 재설정해주는 함수
+void refresh_priority(void) {
+	struct thread *curr = thread_current();
+
+	curr->priority = curr->origin_priority;
+
+	if(!list_empty(&curr->donation_list)) {
+		list_sort(&curr->donation_list, &high_donation_priority,NULL);
+		struct thread *front = list_entry(list_front(&curr->donation_list), struct thread, donation_elem);
+		if (front->priority > curr->priority)
+			curr->priority = front->priority;
+	}
+}
 /* Releases LOCK, which must be owned by the current thread.
    This is lock_release function.
 
@@ -240,6 +281,9 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 
+	remove_with_lock(lock);
+	refresh_priority();
+
 	lock->holder = NULL;
 	sema_up (&lock->semaphore);
 }
@@ -247,6 +291,7 @@ lock_release (struct lock *lock) {
 /* Returns true if the current thread holds LOCK, false
    otherwise.  (Note that testing whether some other thread holds
    a lock would be racy.) */
+//현재 스레드가 LOCK을 보유하고 있으면 true를, 그렇지 않으면 false를 리턴
 bool
 lock_held_by_current_thread (const struct lock *lock) {
 	ASSERT (lock != NULL);

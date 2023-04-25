@@ -326,11 +326,12 @@ thread_yield (void) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->origin_priority = new_priority;
 	// 현재 레디 리스트 안에서 제일 높은 우선순위를 가진 스레드를 찾는다
 	// new(현재)랑 제일 높은 애(전체 레디리스트에서)랑 비교해
 	// new가 제일 높은 애보다 작으면
 	// yield()호출
+	refresh_priority();
 	struct thread *highest_priority= search_highest_priority();
 	if (new_priority < highest_priority) {
 		thread_yield();
@@ -432,6 +433,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	t->origin_priority = priority;
+	t->waiting_lock = NULL;
+	list_init(&t->donation_list);
 }
 
 bool priority_ready_list(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
@@ -679,4 +683,25 @@ void thread_wake(int64_t ticks) {
     }
 
     intr_set_level(old_level);
+}
+
+
+// 우선순위가 높은 스레드가 본인의 우선순위를 기부해주는 함수
+// lock에 연결된 모든 스레드는 다 거쳐감 > waiting_lock 안에 있는 스레드들은 다 기부함수 실행
+// 기부는 8레벨까지 실행
+void donate_priority(void) {
+	int level;
+	struct thread *curr = thread_current();
+	for (level = 0; level < 8; level++) {
+		if (curr->waiting_lock != NULL) {
+			struct thread *waiting_highp_holder = curr->waiting_lock->holder; // 기다리고 있는 애 소환
+			// if (waiting_highp_holder->priority > curr->priority)
+				waiting_highp_holder->priority = curr->priority; // 기다리고 있는 애가 기부해줌
+				curr = waiting_highp_holder;
+		}
+	}
+}
+
+bool high_donation_priority(const struct list_elem *a, const struct list_elem *b,  void *aux UNUSED) {
+	return list_entry(a, struct thread, donation_elem)->priority > list_entry(b, struct thread, donation_elem)->priority;
 }
