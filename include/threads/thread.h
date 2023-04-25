@@ -98,16 +98,12 @@ struct thread {
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
-
-	/*donate를 위한 구조체 요소 추가 - list일 필요없음 */
-	struct lock *request_lock; // 내가 요청한 lock를 저장
-	int origin_priority; //기부 받기 전 priority
-
-	/*장부임(우선순위빌려준 애들을 list에 담음) - 갚을 예정*/
+	int origin_priority;
+	struct list lock_list;
+	struct lock *request_lock;
 	struct list_elem donate_elem;
 	struct list donate_list;
-	/*보유한 lock list*/
-	struct list lock_list;
+
 
 #ifdef USERPROG 
 	/* Owned by userprog/process.c. */
@@ -163,6 +159,6 @@ void do_iret (struct intr_frame *tf);
 void thread_sleep(int64_t start, int64_t ticks);
 void thread_wake(int64_t ticks);
 
-bool less_by_sort_descending(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+
 
 #endif /* threads/thread.h */

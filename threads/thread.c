@@ -62,8 +62,10 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
-
+bool less_by_wake_time(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
+bool less_by_sort_descending(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 static struct thread *get_highest_priority (void);
+
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
 
@@ -433,13 +435,12 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
-	
-	/*danate를 위한 구조체 elem 추가 초기화*/
-	list_init(&t->donate_list); //donate_list 초기화
 	t->origin_priority = priority;
-	list_init(&t->lock_list);
-	t->request_lock = NULL;
 
+	/*danate를 위한 구조체 elem 추가 초기화*/
+	list_init(&t->lock_list); //donate_list 초기화
+	list_init(&t->donate_list);
+	t->request_lock  = NULL;
 }
 
 bool less_by_sort_descending(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
