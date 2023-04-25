@@ -195,6 +195,8 @@ thread_create (const char *name, int priority,
 
 	/* Initialize thread. */
 	init_thread (t, name, priority);
+
+	/*danate 추가*/
 	tid = t->tid = allocate_tid ();
 
 	/* Call the kernel_thread if it scheduled.
@@ -328,6 +330,7 @@ thread_yield (void) {
 void
 thread_set_priority (int new_priority) {
 	thread_current ()->priority = new_priority;
+	thread_current ()->origin_priority = new_priority;
 	
 	struct thread *high_priority_thread = get_highest_priority();
 	if(new_priority < high_priority_thread->priority){
@@ -432,6 +435,11 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	
+	/*danate를 위한 구조체 elem 추가 초기화*/
+	list_init(&t->donate_list); //donate_list 초기화
+	t->origin_priority = priority;
+
 }
 
 bool less_by_sort_descending(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {

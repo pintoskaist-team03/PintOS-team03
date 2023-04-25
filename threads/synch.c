@@ -194,6 +194,12 @@ lock_acquire (struct lock *lock) {
 	ASSERT (!intr_context ());
 	ASSERT (!lock_held_by_current_thread (lock));
 
+	/*현재 스레드A가 lock_a점유, 스레드B가 lock_a 요청하면 sema_down에서 waiters로 들어감
+	들어가기전에 기부함
+	if(lock->holder != null) ?? / if(lock->holder->priority <cur->priority)인 경우
+	*/
+
+
 	sema_down (&lock->semaphore);
 	lock->holder = thread_current ();
 }
@@ -241,6 +247,19 @@ lock_held_by_current_thread (const struct lock *lock) {
 
 	return lock->holder == thread_current ();
 }
+
+/*donate 관련 함수 추가*/
+void priority_danate(struct lock *lock){
+	struct thread *cur_thread = thread_current();
+	struct thread *cur_lock_holder = lock->holder;
+
+	//1. cur_thread의 request_lock_holder 를 holder로 초기화
+	cur_thread->request_lock_holder = cur_lock_holder;
+	//2. cur_lock_holder의 우선순위를 
+}
+
+
+/*---------------------------------------------------------------*/
 
 /* One semaphore in a list. */
 struct semaphore_elem {
