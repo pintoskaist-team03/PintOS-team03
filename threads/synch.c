@@ -31,7 +31,7 @@
 #include <string.h>
 #include "threads/interrupt.h"
 #include "threads/thread.h"
-void donate(struct thread* current_thread, struct lock *lock);
+void priority_danate(struct lock *lock, struct thread *cur_thread);
 bool sort_descending(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
 	struct thread *thread_a = list_entry(a, struct thread, elem);
 	struct thread *thread_b = list_entry(b, struct thread, elem);
@@ -119,7 +119,7 @@ sema_up (struct semaphore *sema) {
 	sema->value++;	//원래는 if문 아래 있었는데, 현재 우선순위 스케줄링으로 thread_unblock()이 실행되면
 	//메인스레드가 sema_up() 실행되버림.. 
 	if (!list_empty (&sema->waiters)){
-		//list_sort(&sema->waiters, &less_by_sort_descending, NULL); //->일단 지움 인터럽트 에러남
+		list_sort(&sema->waiters, sort_descending, NULL); //->일단 지움 인터럽트 에러남
 		thread_unblock(list_entry (list_pop_front (&sema->waiters),struct thread, elem));
 	}
 	intr_set_level (old_level);
@@ -194,20 +194,6 @@ lock_init (struct lock *lock) {
    interrupts disabled, but interrupts will be turned back on if
    we need to sleep. */
 
-// void
-// lock_acquire (struct lock *lock) {
-// 	ASSERT (lock != NULL);
-// 	ASSERT (!intr_context ());
-// 	ASSERT (!lock_held_by_current_thread (lock));
-// 	if(lock->holder != NULL && thread_current != idle_thread){
-// 		if(lock->holder->priority < thread_current()->priority){
-// 			priority_danate(lock, &cur_thread);
-// 		}
-// 	}
-// 	sema_down (&lock->semaphore);
-// 	lock->holder = thread_current ();
-// 	list_push_front(&(thread_current()->lock_list), &lock->lock_elem);
-// }
 void
 lock_acquire (struct lock *lock) {
 	ASSERT (lock != NULL);
@@ -226,25 +212,26 @@ lock_acquire (struct lock *lock) {
 	}
 	sema_down (&lock->semaphore);
 	lock->holder = thread_current ();
-	//list_push_back(&(thread_current()->lock_list),&lock->lock_elem); //현재 보유 스레드에 저장
-	list_push_front(&(thread_current()->lock_list), &lock->lock_elem);
+	list_push_back(&(thread_current()->lock_list),&lock->lock_elem); //현재 보유 스레드에 저장
 }
 
 void priority_danate(struct lock *lock, struct thread *cur_thread){
-	int64_t old_level = intr_disable();
-
+	struct thread *holder = lock->holder;
 	cur_thread->request_lock = lock;
-	//list_insert_ordered(&lock->holder->donate_list,&cur_thread->donate_elem, sort_descending,NULL);
-	list_push_front(&(lock->holder->donate_list),&cur_thread->donate_elem);
-	lock->holder->priority = list_entry(list_begin(&lock->holder->donate_list), struct thread, donate_elem) -> priority;
-	
-	if (lock->holder->request_lock == NULL){
-		intr_set_level(old_level);
-		return;
+	while (holder != NULL && cur_thread->priority > holder->priority)
+	{	
+		list_push_front(&(lock->holder->donate_list),&cur_thread->donate_elem);
+		holder->priority = cur_thread->priority;
+		if(holder->request_lock != NULL){ //holder가 기다리고 있는 lock이 있음
+			struct thread *tmp = list_pop_front(&(holder->donate_list));
+			lock = holder->request_lock;
+			holder = lock->holder;
+		}else{
+			break;
+		}
 	}
-	intr_set_level(old_level);
-	priority_danate(&lock->holder->request_lock,lock->holder);
 }
+
 
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -277,36 +264,7 @@ lock_release (struct lock *lock) {
 	ASSERT (lock != NULL);
 	ASSERT (lock_held_by_current_thread (lock));
 	struct thread* current_thread = thread_current();
-	list_pop_front(&(current_thread->lock_list)); //현재 current_thread에서 lock_list를 제거함
-
-// if (current_thread != idle_thread){
-// 		if (!list_empty (&lock->semaphore.waiters)){
-// 			struct thread* priority_check = list_entry(list_front(&((&lock->semaphore)->waiters)), struct thread, elem);
-// 			priority_check->request_lock = NULL;
-// 			if (list_size(&(current_thread->lock_list)) == 0){
-// 				while(1){
-// 					if (list_begin(&(current_thread->donate_list)) == list_end(&(current_thread->donate_list))){
-// 						current_thread->priority = current_thread->origin_priority;
-// 						break;
-// 					}
-// 					list_pop_front(&(current_thread->donate_list));	
-// 					current_thread->priority = list_entry(list_begin(&current_thread->donate_list), struct thread, donate_elem) -> priority;
-// 				}
-// 			}else{
-// 				struct list_elem* cur_element = list_begin(&(current_thread->donate_list));
-// 				while(1){
-// 					if (priority_check == list_entry(cur_element, struct thread, donate_elem)){
-// 						list_remove(cur_element);
-// 						break;
-// 						}
-// 					cur_element = list_next(cur_element);	
-// 					current_thread->priority = list_entry(list_begin(&current_thread->donate_list), struct thread, donate_elem) -> priority;		
-// 				}
-// 			}
-// 		}
-// 	}
-
-
+	list_pop_back(&(current_thread->lock_list)); //현재 current_thread에서 lock_list를 제거함
 	//2. 새로 lock 획득한 thread 저장
 	if(thread_current () != idle_thread){
 		if(!list_empty(&lock->semaphore.waiters)){
@@ -325,9 +283,10 @@ lock_release (struct lock *lock) {
 			else{
 				struct list_elem* e=list_begin(&(current_thread->donate_list));
 				while (1)
-				{
+				{	
 					if(front_waiters_thread == list_entry(e,struct thread, donate_elem)){
 						list_remove(e);
+						current_thread->priority = list_entry(list_begin(&(current_thread->donate_list)),struct thread, donate_elem)->priority;
 						break;
 					}
 					e = list_next(e);
