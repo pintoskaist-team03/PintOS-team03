@@ -268,7 +268,6 @@ lock_release (struct lock *lock) {
 	//2. 새로 lock 획득한 thread 저장
 	if(thread_current () != idle_thread){
 		if(!list_empty(&lock->semaphore.waiters)){
-			// struct thread *new_lockHolder = lock->holder; ->error!) 현재 lock holder는 나임. sema_up이 되야 그 다음 스레드가 일함
 			struct thread *front_waiters_thread = list_entry(list_front(&((&lock->semaphore)->waiters)), struct thread, elem);
 			front_waiters_thread->request_lock = NULL; // 초기화
 			if(list_size(&(current_thread->lock_list)) == 0){
