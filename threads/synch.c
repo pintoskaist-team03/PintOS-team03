@@ -32,6 +32,7 @@
 #include "threads/interrupt.h"
 #include "threads/thread.h"
 
+
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
    nonnegative integer along with two atomic operators for
    manipulating it:
@@ -53,17 +54,6 @@ bool search_sema_priority(const struct list_elem *a, const struct list_elem *b, 
 	struct thread *thread_a = list_entry(a, struct thread, elem);
 	struct thread *thread_b = list_entry(b, struct thread, elem);
 	return thread_a->priority > thread_b->priority;
-	// 왜 안돼>?!?!?!?1/!?
-	// //semaphore_elem의 list elem를 인자로 받아서, sema
-	// struct semaphore_elem *sema_a = list_entry(a, struct semaphore_elem, elem);
-	// struct semaphore_elem *sema_b = list_entry(b, struct semaphore_elem, elem);
-	// // waiters에서 대기 중인 스레드들의 우선순위 구하기
-	// struct list_elem *sema_elem_a = list_begin(&(sema_a->semaphore.waiters));
-	// struct list_elem *sema_elem_b = list_begin(&(sema_b->semaphore.waiters));
-
-	// struct thread *thread_a = list_entry(sema_elem_a, struct thread, elem);
-	// struct thread *thread_b = list_entry(sema_elem_b, struct thread, elem);
-	// return thread_a->priority > thread_b->priority;
 }
 
 /* Down or "P" operation on a semaphore.  Waits for SEMA's value
@@ -305,6 +295,20 @@ struct semaphore_elem {
 	struct semaphore semaphore;         /* This semaphore. */
 };
 
+bool cmp_sema_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+	//semaphore_elem의 list elem를 인자로 받아서, sema
+	struct semaphore_elem *sema_a = list_entry(a, struct semaphore_elem, elem);
+	struct semaphore_elem *sema_b = list_entry(b, struct semaphore_elem, elem);
+	// waiters에서 대기 중인 스레드들의 우선순위 구하기
+	struct list_elem *sema_elem_a = list_begin(&(sema_a->semaphore.waiters));
+	struct list_elem *sema_elem_b = list_begin(&(sema_b->semaphore.waiters));
+
+	struct thread *thread_a = list_entry(sema_elem_a, struct thread, elem);
+	struct thread *thread_b = list_entry(sema_elem_b, struct thread, elem);
+	return thread_a->priority > thread_b->priority;
+}
+
 /* Initializes condition variable COND.  A condition variable
    allows one piece of code to signal a condition and cooperating
    code to receive the signal and act upon it. */
@@ -335,7 +339,8 @@ cond_wait (struct condition *cond, struct lock *lock) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	sema_init (&waiter.semaphore, 0);
-	list_push_back (&cond->waiters, &waiter.elem);
+	// list_push_back (&cond->waiters, &waiter.elem);
+	list_insert_ordered(&cond->waiters, &waiter.elem, cmp_sema_priority, NULL);
 	lock_release (lock);
 	sema_down (&waiter.semaphore);
 	lock_acquire (lock);
@@ -356,8 +361,11 @@ cond_signal (struct condition *cond, struct lock *lock UNUSED) {
 	ASSERT (lock_held_by_current_thread (lock));
 
 	if (!list_empty (&cond->waiters))
-		sema_up (&list_entry (list_pop_front (&cond->waiters),
+	{
+		 list_sort(&cond->waiters, cmp_sema_priority, NULL);
+		 sema_up (&list_entry (list_pop_front (&cond->waiters),
 					struct semaphore_elem, elem)->semaphore);
+	}
 }
 
 /* Wakes up all threads, if any, waiting on COND (protected by
