@@ -300,10 +300,10 @@ bool cmp_sema_priority(const struct list_elem *a, const struct list_elem *b, voi
 	//semaphore_elem의 list elem를 인자로 받아서, sema
 	struct semaphore_elem *sema_a = list_entry(a, struct semaphore_elem, elem);
 	struct semaphore_elem *sema_b = list_entry(b, struct semaphore_elem, elem);
-	// waiters에서 대기 중인 스레드들의 우선순위 구하기
+
 	struct list_elem *sema_elem_a = list_begin(&(sema_a->semaphore.waiters));
 	struct list_elem *sema_elem_b = list_begin(&(sema_b->semaphore.waiters));
-
+	// waiters에서 대기 중인 스레드들의 우선순위 구하기
 	struct thread *thread_a = list_entry(sema_elem_a, struct thread, elem);
 	struct thread *thread_b = list_entry(sema_elem_b, struct thread, elem);
 	return thread_a->priority > thread_b->priority;
