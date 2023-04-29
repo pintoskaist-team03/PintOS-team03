@@ -164,6 +164,9 @@ int
 process_exec (void *f_name) {
 	char *file_name = f_name;
 	bool success;
+	char *token, *save_ptr;
+	char *parse, *argv[128];
+	int argc;
 
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
@@ -172,6 +175,18 @@ process_exec (void *f_name) {
 	_if.ds = _if.es = _if.ss = SEL_UDSEG;
 	_if.cs = SEL_UCSEG;
 	_if.eflags = FLAG_IF | FLAG_MBS;
+
+	argc = 0;
+	for(token = strtok_r(file_name," ", &save_ptr); token != NULL;){
+		argv[argc]= token;
+		token = strtok_r (NULL, " ", &save_ptr);
+		argc = argc+1;
+	}
+
+	argument_stack(argv, argc, &_if.rsp);
+	_if.R.rdi = argc;
+	_if.R.rsi= (uintptr_t)&argv;
+
 
 	/* We first kill the current context */
 	process_cleanup ();
@@ -189,6 +204,33 @@ process_exec (void *f_name) {
 	NOT_REACHED ();
 }
 
+void argument_stack(char **argv, int argc, void **rsp){
+//함수 호출 규약에 따라 유저 스택에 프로그램 이름과 인자들을 저장
+//(uintptr_t *) 0x80042b7b78
+	for(int i = argc-1; i!=0; i--){
+		*rsp = *rsp - (strlen(argv[i])+1);//'\0'포함, rsp(스택포인터이동)
+		memcpy(*rsp,argv[i], strlen(argv[i])+1);// arg 스택에 복사
+		argv[i] = (char *)*rsp;
+	}
+
+	//rsp 8의 배수로 반올림
+	uintptr_t p = (uintptr_t)*rsp;
+	p = (p+7)&0x7;
+	*rsp = (void *)p;
+
+	// null 넣기
+	*rsp = (void*)((uintptr_t)*rsp - 8);
+	*(char **)*rsp = 0;
+
+	for(int i = argc-1; i!=0; i--){
+		*rsp = (void*)((uintptr_t)*rsp - 8);
+		*(char **)*rsp = argv[i];
+	}
+
+	//return address
+	*rsp = (void*)((uintptr_t)*rsp - 8);
+	*(char **)*rsp = 0;
+}
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
