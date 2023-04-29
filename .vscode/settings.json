@@ -1,5 +1,8 @@
 {
     "files.associations": {
-        "tests.h": "c"
+        "tests.h": "c",
+        "vm.h": "c",
+        "interrupt.h": "c",
+        "string.h": "c"
     }
 }

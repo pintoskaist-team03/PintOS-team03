@@ -127,7 +127,7 @@ void
 thread_start (void) {
 	/* Create the idle thread. */
 	struct semaphore idle_started;
-	sema_init (&idle_started, 0);
+	sema_init (&idle_started, 0); 
 	thread_create ("idle", PRI_MIN, idle, &idle_started);
 
 	/* Start preemptive thread scheduling. */
@@ -189,7 +189,7 @@ thread_create (const char *name, int priority,
 	ASSERT (function != NULL);
 
 	/* Allocate thread. */
-	t = palloc_get_page (PAL_ZERO);
+	t = palloc_get_page (PAL_ZERO); //allocating one page(4kb)
 	if (t == NULL)
 		return TID_ERROR;
 
