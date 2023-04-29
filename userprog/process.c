@@ -183,10 +183,6 @@ process_exec (void *f_name) {
 		argc = argc+1;
 	}
 
-	argument_stack(argv, argc, &_if.rsp);
-	_if.R.rdi = argc;
-	_if.R.rsi= (uintptr_t)&argv;
-
 
 	/* We first kill the current context */
 	process_cleanup ();
@@ -194,6 +190,11 @@ process_exec (void *f_name) {
 	/* And then load the binary */
 	success = load (file_name, &_if);
 
+	argument_stack(argv, argc, &_if.rsp);
+	_if.R.rdi = argc;
+	_if.R.rsi= (uintptr_t)&argv;
+
+	hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
 	if (!success)
@@ -204,33 +205,42 @@ process_exec (void *f_name) {
 	NOT_REACHED ();
 }
 
-void argument_stack(char **argv, int argc, void **rsp){
+void argument_stack(char **argv, int argc, void **rsp){ 
 //함수 호출 규약에 따라 유저 스택에 프로그램 이름과 인자들을 저장
-//(uintptr_t *) 0x80042b7b78
-	for(int i = argc-1; i!=0; i--){
+//0x458b48b775c08548 
+
+	for(int i = argc-1; i >=0; i--){
 		*rsp = *rsp - (strlen(argv[i])+1);//'\0'포함, rsp(스택포인터이동)
 		memcpy(*rsp,argv[i], strlen(argv[i])+1);// arg 스택에 복사
-		argv[i] = (char *)*rsp;
+		argv[i] = (char *)*rsp; //*(char **)rsp;
 	}
 
-	//rsp 8의 배수로 반올림
-	uintptr_t p = (uintptr_t)*rsp;
-	p = (p+7)&0x7;
-	*rsp = (void *)p;
+	//rsp 8의 배수로 반올림   .. 왜짤림? -- 여기가 문제임
+	// uintptr_t p = (uintptr_t)*rsp;
+	// p = (p + 7) & ~7;;
+	// *rsp = (void *)p;
+
+	if((uintptr_t)*rsp % 8 != 0){
+		uintptr_t padding = (uintptr_t)*rsp % 8;
+		*rsp = *rsp-padding;
+		memset(*rsp,0,padding);
+	}
 
 	// null 넣기
 	*rsp = (void*)((uintptr_t)*rsp - 8);
 	*(char **)*rsp = 0;
 
-	for(int i = argc-1; i!=0; i--){
+	for(int i = argc-1; i>=0; i--){
 		*rsp = (void*)((uintptr_t)*rsp - 8);
 		*(char **)*rsp = argv[i];
 	}
 
 	//return address
 	*rsp = (void*)((uintptr_t)*rsp - 8);
-	*(char **)*rsp = 0;
+	**(char **)rsp = 0; //**(char **)rsp = 0;
 }
+
+
 
 /* Waits for thread TID to die and returns its exit status.  If
  * it was terminated by the kernel (i.e. killed due to an
@@ -239,10 +249,14 @@ void argument_stack(char **argv, int argc, void **rsp){
  * been successfully called for the given TID, returns -1
  * immediately, without waiting.
  *
- * This function will be implemented in problem 2-2.  For now, it
+ * This function will be implemented in problem 2-2.  For now, it~
  * does nothing. */
 int
 process_wait (tid_t child_tid UNUSED) {
+	for(int i=0;i<10000000;i++){
+
+	}
+
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
