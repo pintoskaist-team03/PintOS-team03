@@ -60,7 +60,13 @@ pdpe_walk (uint64_t *pdpe, const uint64_t va, int create) {
  * If PML4E does not have a page table for VADDR, behavior depends
  * on CREATE.  If CREATE is true, then a new page table is
  * created and a pointer into it is returned.  Otherwise, a null
- * pointer is returned. */
+ * pointer is returned. 
+ * 페이지 맵 레벨 4, pml4의 가상 주소 VADDR에 대한 페이지 테이블 항목의 주소를 반환합니다.
+ PML4E에 VADDR에 대한 페이지 테이블이 없는 경우 동작은 CREATE에 따라 달라집니다.  
+ CREATE가 참이면 새 페이지 테이블이 생성되고 해당 페이지 테이블에 대한 포인터가 반환됩니다.  
+ 그렇지 않으면 널 포인터가 반환됩니다.
+ * 
+ * */
 uint64_t *
 pml4e_walk (uint64_t *pml4e, const uint64_t va, int create) {
 	uint64_t *pte = NULL;
@@ -209,16 +215,21 @@ pml4_activate (uint64_t *pml4) {
 /* Looks up the physical address that corresponds to user virtual
  * address UADDR in pml4.  Returns the kernel virtual address
  * corresponding to that physical address, or a null pointer if
- * UADDR is unmapped. */
+ * UADDR is unmapped. 
+ * pml4에서 사용자 가상 주소 UADDR에 해당하는 실제 주소를 조회합니다.  
+해당 물리적 주소에 해당하는 커널 가상 주소를 반환하거나, 
+UADDR이 매핑되지 않은 경우 널 포인터를 반환합니다.
+  PML4 페이지 테이블과 가상 주소를 인자로 받아서 
+해당 가상 주소에 대한 물리 페이지 주소를 반환하는 함수*/
 void *
 pml4_get_page (uint64_t *pml4, const void *uaddr) {
 	ASSERT (is_user_vaddr (uaddr));
 
-	uint64_t *pte = pml4e_walk (pml4, (uint64_t) uaddr, 0);
+	uint64_t *pte = pml4e_walk (pml4, (uint64_t) uaddr, 0); //가상 주소에 해당하는 페이지 테이블 엔트리를 가져옴
 
 	if (pte && (*pte & PTE_P))
-		return ptov (PTE_ADDR (*pte)) + pg_ofs (uaddr);
-	return NULL;
+		return ptov (PTE_ADDR (*pte)) + pg_ofs (uaddr); 
+	return NULL; // 페이지 테이블 엔트리가 없거나 P 비트가 설정되어 있지 않으면 NULL을 반환
 }
 
 /* Adds a mapping in page map level 4 PML4 from user virtual page

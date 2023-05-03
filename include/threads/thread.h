@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -96,12 +97,27 @@ struct thread {
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
 
-	/* donation 추가 항목*/
+	/*project1 donation 추가 항목*/
 	int origin_priority;	// donation 받기 전 본인의 우선순위 저장
 	struct list donation_list; // 본인에게 기부해준 스레드들 저장 (donation 받은 것)
 	struct list_elem donation_elem;
 	struct lock *waiting_lock; // donation해준 이유, 현재 스레드가 기다리고 있는 lock
 
+	/*project2 system call 추가*/
+	int exit_status; 
+
+	struct intr_frame parent_if; //부모프로세스 가리킴
+
+	struct list child_list; //부모가 가진 자식 리스트
+	struct list_elem child_elem;
+
+	struct semaphore wait_sema;
+	struct semaphore free_sema;
+	struct semaphore fork_sema;
+
+	int next_fd;
+	struct file **fdt;
+	
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
