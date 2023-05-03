@@ -197,6 +197,14 @@ thread_create (const char *name, int priority,
 	init_thread (t, name, priority);
 	tid = t->tid = allocate_tid ();
 
+	//2-3 parent child
+	struct thread *curr = thread_current();
+	list_push_back(&curr->child_list,&t->child_elem);
+
+	//2-4 file descriptor
+	t->fdt = palloc_get_page(PAL_ZERO);
+	t->next_fd = 2; //0: stdin, 1 stdout
+
 	/* Call the kernel_thread if it scheduled.
 	 * Note) rdi is 1st argument, and rsi is 2nd argument. */
 	t->tf.rip = (uintptr_t) kernel_thread;
@@ -436,6 +444,14 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->origin_priority = priority;
 	t->waiting_lock = NULL;
 	list_init(&t->donation_list);
+
+	
+	/*project2 추가*/
+	t->exit_status = 0;
+	list_init(&t->child_list);
+	sema_init(&t->wait_sema,0);
+	sema_init(&t->free_sema,0);
+	sema_init(&t->fork_sema,0);
 }
 
 bool priority_ready_list(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
