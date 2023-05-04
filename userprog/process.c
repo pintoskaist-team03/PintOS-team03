@@ -55,15 +55,30 @@ struct file *process_get_file (int fd){
 }
 int process_add_file (struct file *f){
 /* 파일 객체를 파일 디스크립터 테이블에 추가*/
+	// struct thread *curr = thread_current();
+	// int fd = curr->next_fd;
+	
+	// if(fd >64){ //크기 지정 어캐하징.
+	// 	return -1;
+	// }
+	// curr->fdt[fd] = f;
+	// curr->next_fd +=1;
+	// return curr->next_fd; /* 파일 디스크립터 리턴 */
 	struct thread *curr = thread_current();
-	int fd = curr->next_fd;
-	if(fd >64){ //크기 지정 어캐하징.
+  //파일 디스크립터 테이블에서 비어있는 자리를 찾습니다.
+	while (curr->next_fd < FDCOUNT_LIMIT  && curr->fdt[curr->next_fd] != NULL) {
+		curr->next_fd++;
+	}
+
+	// 파일 디스크립터 테이블이 꽉 찬 경우 에러를 반환
+	if (curr->next_fd >= FDCOUNT_LIMIT ) {
 		return -1;
 	}
-	curr->fdt[fd] = f;
-	curr->next_fd +=1; /* 파일 디스크립터의 최대값 1 증가 */
-	return fd; /* 파일 디스크립터 리턴 */
+
+	curr->fdt[curr->next_fd] = f;
+	return curr->next_fd;
 }
+
 void process_close_file(int fd){
 	struct thread *curr = thread_current();
 /* 파일 디스크립터에 해당하는 파일을 닫음 */
@@ -129,12 +144,11 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	//return thread_create (name, PRI_DEFAULT, __do_fork, thread_current ());
 	struct thread *parent = thread_current();
 	memcpy(&parent->parent_if,if_,sizeof(struct intr_frame)); //부모 프로세스 메모리를 복사
-	tid_t pid = thread_create (name,PRI_DEFAULT, __do_fork, thread_current ());
+	tid_t pid = thread_create (name,PRI_DEFAULT, __do_fork, parent);
 
 	if(pid == TID_ERROR){
 		return TID_ERROR;
 	}
-
 	struct thread *child = get_child_process(pid); 
 	sema_down(&child->fork_sema);
 	if(child->exit_status == -1){
@@ -156,18 +170,18 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 
 /* 1. TODO: If the parent_page is kernel page, then return immediately. */
 	if(is_kernel_vaddr(va)){
-		return false;
+		return true;
 	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
-	if(parent_page = NULL){
+	if(parent_page == NULL){
 		return false;
 	}
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-	newpage = palloc_get_page (PAL_USER | PAL_ZERO);
+	newpage = palloc_get_page (PAL_USER);
 	if(newpage == NULL){
 		return false;
 	}
@@ -203,11 +217,10 @@ __do_fork (void *aux) {
 	struct intr_frame *parent_if;
 	parent_if=&parent->parent_if;
 	bool succ = true;
-#ifdef DEBUG
-    printf("[Fork] Forking from %s to %s\n", parent->name, current->name);
-#endif
+
 	/* 1. Read the cpu context to local stack. */
 	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	if_.R.rax = 0; // ?????????????
 
 	/* 2. Duplicate PT */
 	current->pml4 = pml4_create();
@@ -232,7 +245,11 @@ __do_fork (void *aux) {
 	 * 힌트) 파일 객체를 복제하려면 include/filesys/file.h에서 `file_duplicate`를 사용합니다. 
 	 * 함수가 부모의 리소스를 성공적으로 복제할 때까지 부모는 fork()에서 반환하지 않아야 합니다.
 	 * */
-	for(int i = 0; i<64; i++){
+	if(parent->next_fd == FDCOUNT_LIMIT){
+		goto error;
+	}
+
+	for(int i = 0; i<FDCOUNT_LIMIT; i++){
 		struct file *file = parent->fdt[i];
 		if(file == NULL)
 			continue;
@@ -254,7 +271,9 @@ __do_fork (void *aux) {
 	if (succ)
 		do_iret (&if_);
 error:
-	thread_exit ();
+	current->exit_status = TID_ERROR;
+	sema_up(&current->fork_sema);
+	exit(-1);
 }
 
 /* Switch the current execution context to the f_name.
@@ -267,7 +286,6 @@ process_exec (void *f_name) {
 	char *token, *save_ptr;
 	char *argv[128];
 	int argc;
-
 	/* We cannot use the intr_frame in the thread structure.
 	 * This is because when current thread rescheduled,
 	 * it stores the execution information to the member. */
@@ -297,9 +315,12 @@ process_exec (void *f_name) {
 
 	//hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 	/* If load failed, quit. */
-	palloc_free_page (file_name);
-	if (!success)
+	if (!success){
+		palloc_free_page (file_name);
 		return -1;
+	}
+
+	palloc_free_page (file_name);
 
 	/* Start switched process. */
 	do_iret (&_if);
@@ -308,7 +329,6 @@ process_exec (void *f_name) {
 
 void argument_stack(char **argv, int argc, void **rsp){ 
 //함수 호출 규약에 따라 유저 스택에 프로그램 이름과 인자들을 저장
-//0x458b48b775c08548 
 
 	for(int i = argc-1; i >=0; i--){
 		*rsp = *rsp - (strlen(argv[i])+1);//'\0'포함, rsp(스택포인터이동)
@@ -350,21 +370,17 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
-	for(int i=0; i<10000000;i++){
+	struct thread *child = get_child_process(child_tid);
 
+	if(child == NULL){
+		return -1;
 	}
-	return -1;
-	// struct thread *child = get_child_process(child_tid);
 
-	// if(child == NULL){
-	// 	return -1;
-	// }
-
-	// sema_down(&child->wait_sema);
-	// int exit_status = child->exit_status;
-	// list_remove(&child->child_elem);
-	// sema_up(&child->free_sema);
-	// return exit_status;
+	sema_down(&child->wait_sema);
+	int exit_status = child->exit_status;
+	list_remove(&child->child_elem);
+	sema_up(&child->free_sema);
+	return child->exit_status;
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -374,7 +390,14 @@ process_exit (void) {
 	/* TODO: Your code goes here.
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
-	 * TODO: We recommend you to implement process resource cleanup here. */
+	 * TODO: We recommend you to implement process resource cleanup here. */ 
+	//palloc_free_page(curr->fdt); // 메모리 누수
+	palloc_free_multiple(curr->fdt,FDT_PAGES);
+
+	file_close(curr->running);
+
+	sema_up(&curr->wait_sema);
+	sema_down(&curr->free_sema);
 
 	process_cleanup ();
 }
@@ -501,7 +524,6 @@ load (const char *file_name, struct intr_frame *if_) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
-
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -566,7 +588,8 @@ load (const char *file_name, struct intr_frame *if_) {
 				break;
 		}
 	}
-
+	file_deny_write(file);
+	t->running = file;
 	/* Set up stack. */
 	if (!setup_stack (if_))
 		goto done;
@@ -581,7 +604,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	//file_close (file);
 	return success;
 }
 

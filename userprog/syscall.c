@@ -14,6 +14,7 @@
 #include "threads/palloc.h"
 #include "lib/kernel/stdio.h"
 #include "threads/synch.h"
+#include "userprog/process.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -141,8 +142,6 @@ exit state -1을 반환하며 프로세스가 종료됩니다.
 3. process_exec()를 실행 해, 현재 실행중인 프로세스를 filename으로 context switching하는 작업을 진행
 */
 	check_address(file);
-	struct thread *curr = thread_current();
-
 	// 문제점) SYS_EXEC - process_exec의 process_cleanup 때문에 f->R.rdi 날아감.
 	// 여기서 file_name 동적할당해서 복사한 뒤, 그걸 넘겨주기
 	int siz = strlen(file)+1;
@@ -173,12 +172,11 @@ int open (const char *file){
 /* 파일 디스크립터 리턴 */
 /* 해당 파일이 존재하지 않으면 -1 리턴 */
 	check_address(file);
-	struct file *fileobj = filesys_open(file);
 
+	struct file *fileobj = filesys_open(file);
 	if(fileobj == NULL)
 		return -1;
 	int fd = process_add_file(fileobj);
-
 	if(fd == -1) //fd table 꽉참
 		file_close(fileobj);
 	return fd;
@@ -187,7 +185,6 @@ int open (const char *file){
 int filesize (int fd){
 /* 파일 디스크립터를 이용하여 파일 객체 검색 */
   struct file *fileobj= process_get_file(fd);
-
   if(fileobj == NULL){ /* 해당 파일이 존재하지 않으면 -1 리턴 */
 	return -1;
   }
@@ -261,9 +258,7 @@ void close (int fd) {
 
 void check_address(void *addr){
 	struct thread *curr = thread_current();
-	if(pml4_get_page(curr->pml4, addr) == NULL || !is_user_vaddr(addr) || addr== NULL){
-		//유효하지 않으면 exit(-1) //프로세스 종료
-		//포인터가 가리키는 주소가 유저 영역(0x8048000~0xc0000000)의 주소인지 확인
+	if(addr== NULL || !is_user_vaddr(addr)|| pml4_get_page(curr->pml4, addr) == NULL){
 		exit(-1);
 	} 
 }

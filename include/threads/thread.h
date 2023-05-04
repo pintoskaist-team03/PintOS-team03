@@ -29,6 +29,11 @@ typedef int tid_t;
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
 
+
+// for system call
+#define FDT_PAGES 3   
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) 
+
 /* A kernel thread or user process.
  *
  * Each thread structure is stored in its own 4 kB page.  The
@@ -105,9 +110,7 @@ struct thread {
 
 	/*project2 system call 추가*/
 	int exit_status; 
-
 	struct intr_frame parent_if; //부모프로세스 가리킴
-
 	struct list child_list; //부모가 가진 자식 리스트
 	struct list_elem child_elem;
 
@@ -117,6 +120,7 @@ struct thread {
 
 	int next_fd;
 	struct file **fdt;
+	struct file *running;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

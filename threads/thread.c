@@ -202,7 +202,8 @@ thread_create (const char *name, int priority,
 	list_push_back(&curr->child_list,&t->child_elem);
 
 	//2-4 file descriptor
-	t->fdt = palloc_get_page(PAL_ZERO);
+	//t->fdt = palloc_get_page(PAL_ZERO);//확인) multi-oom : need more pages to accomodate 10 stacks of 126 opens
+	t->fdt = palloc_get_multiple(PAL_ZERO,FDT_PAGES); //오ㅐ 3인지?
 	t->next_fd = 2; //0: stdin, 1 stdout
 
 	/* Call the kernel_thread if it scheduled.
@@ -452,6 +453,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	sema_init(&t->wait_sema,0);
 	sema_init(&t->free_sema,0);
 	sema_init(&t->fork_sema,0);
+	t->running = NULL;
 }
 
 bool priority_ready_list(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) {
