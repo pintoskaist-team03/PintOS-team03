@@ -200,7 +200,7 @@ int read (int fd, void *buffer, unsigned size) {
 /* 파일 디스크립터가 0일 경우 키보드에 입력을 버퍼에 저장 후
 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
 /* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저
-장 후 읽은 바이트 수를 리턴 */
+장 후 읽은 바이트 수를 리턴  */ 
 	lock_acquire(&filesys_lock);
 	if(fd == 0){
 		input_getc();

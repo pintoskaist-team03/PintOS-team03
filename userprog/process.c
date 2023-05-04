@@ -180,7 +180,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	memcpy(newpage,parent_page,PGSIZE);
 	writable = is_writable(pte);
 
-	/* 5. Add new page to child's page table at address VA with WRITABLE
+	/* 5. Add new page to  child's page table at address VA with WRITABLE
 	 *    permission. */
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
