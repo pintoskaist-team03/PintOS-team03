@@ -5,6 +5,7 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,6 +28,11 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+
+// for system call
+#define FDT_PAGES 3   
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) 
 
 /* A kernel thread or user process.
  *
@@ -101,6 +107,20 @@ struct thread {
 	struct list donation_list; // 본인에게 기부해준 스레드들 저장 (donation 받은 것)
 	struct list_elem donation_elem;
 	struct lock *waiting_lock; // donation해준 이유, 현재 스레드가 기다리고 있는 lock
+
+	/*project2 system call 추가*/
+	int exit_status; 
+	struct intr_frame parent_if; //부모프로세스 가리킴
+	struct list child_list; //부모가 가진 자식 리스트
+	struct list_elem child_elem;
+
+	struct semaphore wait_sema;
+	struct semaphore free_sema;
+	struct semaphore fork_sema;
+
+	int next_fd;
+	struct file **fdt;
+	struct file *running;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
