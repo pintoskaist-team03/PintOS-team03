@@ -60,9 +60,16 @@ pdpe_walk (uint64_t *pdpe, const uint64_t va, int create) {
  * If PML4E does not have a page table for VADDR, behavior depends
  * on CREATE.  If CREATE is true, then a new page table is
  * created and a pointer into it is returned.  Otherwise, a null
- * pointer is returned. */
+ * pointer is returned. 
+ * 페이지 맵 레벨 4, pml4의 가상 주소 VADDR에 대한 페이지 테이블 항목의 주소를 반환합니다.
+ PML4E에 VADDR에 대한 페이지 테이블이 없는 경우 동작은 CREATE에 따라 달라집니다. 
+  CREATE가 참이면 새 페이지 테이블이 생성되고 해당 페이지 테이블에 대한 포인터가 반환됩니다.  
+  그렇지 않으면 널 포인터가 반환됩니다.*/
 uint64_t *
 pml4e_walk (uint64_t *pml4e, const uint64_t va, int create) {
+	/*페이지 디렉터리의 페이지 테이블 엔트리를 검색하고, 
+	해당 엔트리가 존재하는 경우 해당 페이지 테이블 엔트리의 주소를 반환*/
+	
 	uint64_t *pte = NULL;
 	int idx = PML4 (va);
 	int allocated = 0;
@@ -143,11 +150,14 @@ pdp_for_each (uint64_t *pdp,
 	return true;
 }
 
-/* Apply FUNC to each available pte entries including kernel's. */
+/* Apply FUNC to each available pte entries including kernel's. \
+ PML4 테이블을 순회하면서 각 PDP 테이블을 처리하는 역할을 수행
+*/
 bool
 pml4_for_each (uint64_t *pml4, pte_for_each_func *func, void *aux) {
+	//pml4배열을 반복하면서 테이블의 각 엔트리에 접근
 	for (unsigned i = 0; i < PGSIZE / sizeof(uint64_t *); i++) {
-		uint64_t *pdpe = ptov((uint64_t *) pml4[i]);
+		uint64_t *pdpe = ptov((uint64_t *) pml4[i]); //물리주소-> 가상주소
 		if (((uint64_t) pdpe) & PTE_P)
 			if (!pdp_for_each ((uint64_t *) PTE_ADDR (pdpe), func, aux, i))
 				return false;
@@ -209,15 +219,25 @@ pml4_activate (uint64_t *pml4) {
 /* Looks up the physical address that corresponds to user virtual
  * address UADDR in pml4.  Returns the kernel virtual address
  * corresponding to that physical address, or a null pointer if
- * UADDR is unmapped. */
+ * UADDR is unmapped. 
+ * pml4에서 사용자 가상 주소 UADDR에 해당하는 실제 주소를 조회. 
+ * 해당 물리적 주소에 해당하는 커널 가상 주소를 반환하거나, 
+ * UADDR이 매핑되지 않은 경우 널 포인터를 반환합니다. */
 void *
 pml4_get_page (uint64_t *pml4, const void *uaddr) {
 	ASSERT (is_user_vaddr (uaddr));
 
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) uaddr, 0);
+	//pml4e_walk() : 가상 주소 uaddr에 대한 페이지 테이블 항목의 주소를 return
 
-	if (pte && (*pte & PTE_P))
+	if (pte && (*pte & PTE_P)) // 해당 페이지 테이블 엔트리의 Present 비트(PTE_P)가 설정되어 있는 경우=>페이지가 존재하면
 		return ptov (PTE_ADDR (*pte)) + pg_ofs (uaddr);
+		/*PTE_ADDR (*pte) : 페이지의 물리주소추출
+		 ptov (PTE_ADDR (*pte)): 물리주소->커널 가상주소 =>페이지의 커널 가상주소 얻기
+		 pg_ofs (uaddr): uaddr의 페이지 내 오프셋 계산
+		 =>커널 가상주소+페이지 내 오프셋 =>"uaddr"의 가상주소에 대한 실제 커널 가상주소 계산
+		 =>가상 주소 uaddr에 대해 해당 가상 주소의 페이지에 접근하기 위한 실제 커널 내의 주소를 계산
+		 */
 	return NULL;
 }
 
@@ -228,18 +248,29 @@ pml4_get_page (uint64_t *pml4, const void *uaddr) {
  * If WRITABLE is true, the new page is read/write;
  * otherwise it is read-only.
  * Returns true if successful, false if memory allocation
- * failed. */
+ * failed. 
+ * 사용자 가상 페이지 UPAGE에서 커널 가상 주소 KPAGE로 식별되는 물리적 프레임에 페이지 맵 레벨 4 PML4의 매핑을 추가합니다.
+ *  UPAGE는 이미 매핑되어 있지 않아야 합니다. KPAGE는 아마도 palloc_get_page()로 사용자 풀에서 얻은 페이지일 것입니다.
+ WRITABLE이 참이면 새 페이지는 읽기/쓰기가 가능하고, 그렇지 않으면 읽기 전용입니다. 
+ 성공하면 true를, 메모리 할당에 실패하면 false를 반환합니다.
+ * */
+/*주어진 가상 주소 upage에 대한 페이지 테이블 엔트리를 설정하는 역할을 합니다. 
+이 함수는 페이지 테이블 계층을 탐색하여 적절한 엔트리를 찾고, 해당 엔트리에 물리 주소 kpage와 필요한 플래그를 설정*/
 bool
 pml4_set_page (uint64_t *pml4, void *upage, void *kpage, bool rw) {
 	ASSERT (pg_ofs (upage) == 0);
 	ASSERT (pg_ofs (kpage) == 0);
 	ASSERT (is_user_vaddr (upage));
-	ASSERT (pml4 != base_pml4);
+	ASSERT (pml4 != base_pml4); //기본 커널 PML4 테이블은 수정할 수 없으며, 유저 영역의 페이지 테이블만 수정 가능
 
-	uint64_t *pte = pml4e_walk (pml4, (uint64_t) upage, 1);
+	uint64_t *pte = pml4e_walk (pml4, (uint64_t) upage, 1); 
+	// 가상 주소 upage에 대한 페이지 테이블 엔트리를 가져옵니다. 만약 해당 엔트리가 존재하지 않으면, 새로운 페이지 테이블 엔트리를 생성
 
 	if (pte)
 		*pte = vtop (kpage) | PTE_P | (rw ? PTE_W : 0) | PTE_U;
+
+	/*해당 엔트리에 물리 주소 kpage와 필요한 플래그(PTE_P, PTE_W, PTE_U)를 설정합니다. 
+	이를 통해 가상 주소 upage와 물리 주소 kpage를 매핑하고, 쓰기 가능 여부 등의 특성을 설정	*/
 	return pte != NULL;
 }
 

@@ -8,7 +8,9 @@
 /* Physical address of kernel base. */
 #define LOADER_KERN_BASE 0x8004000000
 
-/* Kernel virtual address at which all physical memory is mapped. */
+/* Kernel virtual address at which all physical memory is mapped.
+모든 물리적 메모리가 매핑되는 커널 가상 주소
+ */
 #define LOADER_PHYS_BASE 0x200000
 
 /* Multiboot infos */

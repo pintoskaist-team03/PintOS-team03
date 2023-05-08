@@ -32,7 +32,7 @@ typedef int tid_t;
 
 // for system call
 #define FDT_PAGES 3   
-#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) 
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9) //파일 디스크립터의 최대 개수는 1536개로 제한
 
 /* A kernel thread or user process.
  *

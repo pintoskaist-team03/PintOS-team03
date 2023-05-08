@@ -258,7 +258,6 @@ thread_unblock (struct thread *t) {
 	// 지금 태어난 스레드가 우선순위가 현재 런하고 있는 스레드보다 크다면
 	// thread_yield()호출해서 양보
 	struct thread *curr = thread_current();
-
 	if (curr->status == THREAD_RUNNING) {
 		if (curr != idle_thread) {
 			if (t->priority > curr ->priority) {
@@ -439,7 +438,7 @@ init_thread (struct thread *t, const char *name, int priority) {
 	memset (t, 0, sizeof *t);
 	t->status = THREAD_BLOCKED;
 	strlcpy (t->name, name, sizeof t->name);
-	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
+	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *); //커널 스택 포인터 위치를 저장
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
 	t->origin_priority = priority;
@@ -487,11 +486,21 @@ search_highest_priority (void) {
 }
 
 /* Use iretq to launch the thread */
+/*
+인터럽트가 발생하면 CPU는 해당 인터럽트에 대한 처리를 수행하기 위해 인터럽트 서비스 루틴(ISR)으로 제어를 이동
+
+인터럽트 프레임을 복원,iretq 어셈블리 명령어를 통해 인터럽트에서 복귀하여 프로세스의 실행을 재개
+'movq ...' 명령어들은 스택에 저장된 인터럽트 프레임 내의 레지스터 값을 각각 해당하는 레지스터로 복원
+
+전달받은 인터럽트 프레임을 사용하여 현재 실행 중인 프로세스의 레지스터 값을 복원하고, 
+iretq 어셈블리 명령어를 실행하여 인터럽트 처리가 끝나고 원래의 프로세스 상태로 돌아갑니다. 
+이를 통해 자식 프로세스는 인터럽트 처리 이후에 중단된 지점에서 실행을 재개
+*/
 void
 do_iret (struct intr_frame *tf) {
 	__asm __volatile(
-			"movq %0, %%rsp\n"
-			"movq 0(%%rsp),%%r15\n"
+			"movq %0, %%rsp\n" //rsp 레지스터에 tf 변수의 값을 저장
+			"movq 0(%%rsp),%%r15\n" //스택의 맨 위에 있는 값을 %%r15 레지스터로 복원
 			"movq 8(%%rsp),%%r14\n"
 			"movq 16(%%rsp),%%r13\n"
 			"movq 24(%%rsp),%%r12\n"
@@ -506,11 +515,11 @@ do_iret (struct intr_frame *tf) {
 			"movq 96(%%rsp),%%rcx\n"
 			"movq 104(%%rsp),%%rbx\n"
 			"movq 112(%%rsp),%%rax\n"
-			"addq $120,%%rsp\n"
-			"movw 8(%%rsp),%%ds\n"
+			"addq $120,%%rsp\n" //addq $120, %%rsp 명령어는 스택 포인터를 120만큼 증가 =>스택에 저장된 인터럽트 프레임을 제거하기 위해 사용
+			"movw 8(%%rsp),%%ds\n" //스택에 저장된 인터럽트 프레임 내의 세그먼트 레지스터 값을 각각 해당하는 레지스터로 복원
 			"movw (%%rsp),%%es\n"
 			"addq $32, %%rsp\n"
-			"iretq"
+			"iretq" //인터럽트에서 복귀하여 이전 상태로 복원하고, 해당 위치에서 프로세스의 실행을 재개
 			: : "g" ((uint64_t) tf) : "memory");
 }
 

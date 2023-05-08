@@ -259,29 +259,35 @@ palloc_init (void) {
    then the pages are filled with zeros.  If too few pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
+   /*여러개의 페이지를 할당받는 기능*/
 void *
 palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
+	//page_cnt: 할당받을 페이지의 개수
+	//3인 경우, 연속된 3개의 페이지에 해당하는 메모리를 할당하고 반환
 	struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
+	//flags에 따라 page pool 선택
 
-	lock_acquire (&pool->lock);
+	lock_acquire (&pool->lock); // 동시에 여러 스레드가 같은 페이지 풀에 접근하는 것을 방지
 	size_t page_idx = bitmap_scan_and_flip (pool->used_map, 0, page_cnt, false);
+	//할당되지 않은 페이지를 찾고, 해당 페이지를 할당된 상태로 변경
 	lock_release (&pool->lock);
 	void *pages;
 
-	if (page_idx != BITMAP_ERROR)
-		pages = pool->base + PGSIZE * page_idx;
+	if (page_idx != BITMAP_ERROR) //BITMAP_ERROR가 아니면 page할당 가능
+		pages = pool->base + PGSIZE * page_idx; //해당페이지들의 시작 주소저장
+		//pool->base +  할당된 페이지들의 인덱스를 곱한 값인 페이지
 	else
 		pages = NULL;
 
-	if (pages) {
-		if (flags & PAL_ZERO)
-			memset (pages, 0, PGSIZE * page_cnt);
+	if (pages) { //pages가 null이 아니면 할당된 페이지 초기화
+		if (flags & PAL_ZERO) //flags에 pal_zero 이면
+			memset (pages, 0, PGSIZE * page_cnt); //memset으로 할당된 페이지 0으로 초기화
 	} else {
 		if (flags & PAL_ASSERT)
 			PANIC ("palloc_get: out of pages");
 	}
 
-	return pages;
+	return pages; //해당페이지들의 시작 주소 리턴
 }
 
 /* Obtains a single free page and returns its kernel virtual
@@ -290,7 +296,13 @@ palloc_get_multiple (enum palloc_flags flags, size_t page_cnt) {
    otherwise from the kernel pool.  If PAL_ZERO is set in FLAGS,
    then the page is filled with zeros.  If no pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
-   FLAGS, in which case the kernel panics. */
+   FLAGS, in which case the kernel panics. 
+   하나의 무료 페이지를 가져와 커널 가상 주소를 반환합니다.
+PAL_USER가 설정되어 있으면 사용자 풀에서, 그렇지 않으면 커널 풀에서 페이지를 가져옵니다.  
+FLAGS에 PAL_ZERO가 설정되어 있으면 페이지가 0으로 채워집니다.  
+사용 가능한 페이지가 없으면 사용 가능한 페이지가 없는 경우, 널 포인터를 반환합니다. 
+FLAGS에 설정되어 있지 않으면 커널이 패닉합니다.
+   */
 void *
 palloc_get_page (enum palloc_flags flags) {
 	return palloc_get_multiple (flags, 1);

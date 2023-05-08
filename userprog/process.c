@@ -64,6 +64,8 @@ int process_add_file (struct file *f){
 	// curr->fdt[fd] = f;
 	// curr->next_fd +=1;
 	// return curr->next_fd; /* 파일 디스크립터 리턴 */
+	//파일 디스크립터가 닫힌 후에도 재사용이 가능하고, 파일 디스크립터의 순서를 유지해야 
+	//하는 경우에는 비어있는 자리를 찾는 과정이 필요
 	struct thread *curr = thread_current();
   //파일 디스크립터 테이블에서 비어있는 자리를 찾습니다.
 	while (curr->next_fd < FDCOUNT_LIMIT  && curr->fdt[curr->next_fd] != NULL) {
@@ -106,16 +108,18 @@ process_create_initd (const char *file_name) {
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
-	fn_copy = palloc_get_page (0);
+	fn_copy = palloc_get_page (0); //'0'페이지 유형 지정 X , 커널 가상 주소 반환
 	if (fn_copy == NULL)
 		return TID_ERROR;
-	strlcpy (fn_copy, file_name, PGSIZE);
+	strlcpy (fn_copy, file_name, PGSIZE); //(1 << PGBITS) PGBITS =12
+	//file_name을 fn_copy로 복사
 
 	/*----------추가 코드------------------------*/
 	char *save_ptr;
 	file_name =strtok_r(file_name," ",&save_ptr);
 
 	/* Create a new thread to execute FILE_NAME. */
+	//해당 file_name으로 thread create
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
 		palloc_free_page (fn_copy);
@@ -141,16 +145,18 @@ initd (void *f_name) {
 tid_t
 process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
-	//return thread_create (name, PRI_DEFAULT, __do_fork, thread_current ());
+/*인자로 들어온 if_: 부모의 최신 if임*/
+
 	struct thread *parent = thread_current();
 	memcpy(&parent->parent_if,if_,sizeof(struct intr_frame)); //부모 프로세스 메모리를 복사
-	tid_t pid = thread_create (name,PRI_DEFAULT, __do_fork, parent);
+	tid_t pid = thread_create (name,PRI_DEFAULT, __do_fork, parent); //부모 스레드의 자식리스트로push back
+			// 자식프로세스는 생성만 되고 ready큐에 대기중
 
 	if(pid == TID_ERROR){
 		return TID_ERROR;
 	}
 	struct thread *child = get_child_process(pid); 
-	sema_down(&child->fork_sema);
+	sema_down(&child->fork_sema); //부모스레드가 child->fork_semak 다운, 부모스레드는 멈춤->자식스레드 do_fork 실행
 	if(child->exit_status == -1){
 		return TID_ERROR;
 	}
@@ -159,9 +165,13 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 
 #ifndef VM
 /* Duplicate the parent's address space by passing this function to the
- * pml4_for_each. This is only for the project 2. */
+ * pml4_for_each. This is only for the project 2. 
+ 이 함수를 pml4_for_each에 전달하여 부모의 주소 공간을 복제합니다. 이것은 프로젝트 2에만 해당됩니다.
+ */
 static bool
 duplicate_pte (uint64_t *pte, void *va, void *aux) {
+	/*pte(pagetable entry) 복제, 해당 entry 가리키는 va의 페이지를 부모스레드의
+	페이지 테이블에서 가져와 자식 스레드의 페이지 테이블에 새로운 페이지로 추가*/
 	struct thread *current = thread_current ();
 	struct thread *parent = (struct thread *) aux;
 	void *parent_page;
@@ -169,19 +179,20 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	bool writable;
 
 /* 1. TODO: If the parent_page is kernel page, then return immediately. */
-	if(is_kernel_vaddr(va)){
+	if(is_kernel_vaddr(va)){ //부모가 kernel page이면 반환
 		return true;
 	}
 
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
+	//부모의 pml4에서 'va'에 해당하는 페이지 가져옴
 	if(parent_page == NULL){
 		return false;
 	}
 
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-	newpage = palloc_get_page (PAL_USER);
+	newpage = palloc_get_page (PAL_USER); //새로운 user영역 페이지 할당받음
 	if(newpage == NULL){
 		return false;
 	}
@@ -191,11 +202,12 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	 *    TODO: according to the result).
 	 * 부모 페이지를 복사해 3에서 새로 할당받은 페이지에 넣어준다. 
 	 * 이때 부모 페이지가 writable인지 아닌지 확인하기 위해 is_writable() 함수를 이용한다. */
-	memcpy(newpage,parent_page,PGSIZE);
-	writable = is_writable(pte);
+	memcpy(newpage,parent_page,PGSIZE); //PGSIZE 1<<12
+	writable = is_writable(pte); //주어진 페이지 테이블 엔트리(pte)가 쓰기 가능한지를 확인하는 매크로
 
 	/* 5. Add new page to  child's page table at address VA with WRITABLE
 	 *    permission. */
+	// 자식 스레드의 페이지 테이블에 새로운 페이지를 추가
 	if (!pml4_set_page (current->pml4, va, newpage, writable)) {
 		/* 6. TODO: if fail to insert page, do error handling. */
 		return false;
@@ -207,33 +219,40 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 /* A thread function that copies parent's execution context.
  * Hint) parent->tf does not hold the userland context of the process.
  *       That is, you are required to pass second argument of process_fork to
- *       this function. */
+ *       this function. 
+ * 부모 스레드의 복사복 만듦
+ * */
 static void
 __do_fork (void *aux) {
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
-	struct thread *current = thread_current ();
+	struct thread *current = thread_current (); //자식 프로세스임
 	/* TODO: somehow pass the parent_if. (i.e. process_fork()'s if_) */
 	struct intr_frame *parent_if;
 	parent_if=&parent->parent_if;
 	bool succ = true;
 
 	/* 1. Read the cpu context to local stack. */
-	memcpy (&if_, parent_if, sizeof (struct intr_frame));
+	//부모 스레드의 인터럽트 프레임을 자식 스레드로 가져오는 역할, 메모리 영역의 데이터를 복사
+	memcpy (&if_, parent_if, sizeof (struct intr_frame));//현재 실행 중인 프로세스의 CPU 컨텍스트 정보를 복제하는 과정
 	if_.R.rax = 0; // ?????????????
 
-	/* 2. Duplicate PT */
-	current->pml4 = pml4_create();
+	/* 2. Duplicate PT : page table 복제 */
+	current->pml4 = pml4_create(); // 자식 스레드는 독립적인 가상 주소 공간을 가지게 됨
 	if (current->pml4 == NULL)
 		goto error;
 
-	process_activate (current);
+	process_activate (current); //자식 스레드 활성화
+	/*???다시 찾기???? 자식 스레드의 페이지 테이블을 적용하고, 
+	CR3 레지스터를 업데이트하여 가상 주소 변환에 사용되는 페이지 테이블을 설정하는 작업을 수행*/
 #ifdef VM
 	supplemental_page_table_init (&current->spt);
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
 		goto error;
 #else
 	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
+	//부모 스레드의 페이지 테이블을 순회하고, 각 페이지 테이블 엔트리에 대해 duplicate_pte 함수를 적용하는 것을 의미
+	//duplicate_pte()는 각 pte를 복제해 자식 프로세스의 페이지테이블의 새로운 엔트리로 추가
 		goto error;
 #endif
 
@@ -248,23 +267,24 @@ __do_fork (void *aux) {
 	if(parent->next_fd == FDCOUNT_LIMIT){
 		goto error;
 	}
-
+/*부모 프로세스의 파일 디스크립터 테이블(parent->fdt)을 순회하면서 
+각 파일 객체를 복제하여 자식 프로세스의 파일 디스크립터 테이블(current->fdt)에 복사하는 역할*/
 	for(int i = 0; i<FDCOUNT_LIMIT; i++){
 		struct file *file = parent->fdt[i];
 		if(file == NULL)
 			continue;
 		if(true){
 			struct file *newfile;
-			if(file>2)
-				newfile = file_duplicate(file);
+			if(file>2) 
+				newfile = file_duplicate(file); //file_duplicate 함수를 사용하여 부모 스레드의 파일 객체를 복제하여 자식 스레드에게 전달
 			else
-				newfile = file;
+				newfile = file; //0, 1, 2는 표준 입력, 표준 출력, 표준 오류로 사용되는 파일 디스크립터이므로, 이들은 복제하지 않고 그대로 사용
 			current->fdt[i] = newfile;
 		}
 	}
 	current->next_fd = parent->next_fd;
 	// child loaded successfully, wake up parent in process_fork
-	sema_up(&current->fork_sema);
+	sema_up(&current->fork_sema); //복제가 완료되면 sema_up으로 부모프로세스 깨움, 부모프로세스 ready큐 대기중
 	// process_init ();
 
 	/* Finally, switch to the newly created process. */
@@ -371,16 +391,21 @@ process_wait (tid_t child_tid UNUSED) {
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
 	struct thread *child = get_child_process(child_tid);
-
 	if(child == NULL){
 		return -1;
 	}
 
-	sema_down(&child->wait_sema);
-	int exit_status = child->exit_status;
+	sema_down(&child->wait_sema); // 부모 프로세스가 자식 프로세스의 실행을 기다리도록 하는 동기화 작업.부모 프로세스의 실행을 일시 정지
 	list_remove(&child->child_elem);
+	/*주어진 원소(child_elem)를 연결 리스트에서 제거하는 작업을 수행
+	 부모 프로세스는 자식 프로세스의 목록을 유지하며, 자식 프로세스가 종료되었을 때 이 목록에서 해당 자식 프로세스를 제거해야함
+	=> 부모 프로세스는 정확하고 유효한 자식 목록을 유지할 수 있음
+	*/
 	sema_up(&child->free_sema);
-	return child->exit_status;
+	//자식 프로세스가 종료되었음을 부모 프로세스에게 알리고, 자원의 안전한 해제를 보장
+	//list remove한 뒤에 sema_up으로 자식 프로세스 종료
+
+	return child->exit_status; 
 }
 
 /* Exit the process. This function is called by thread_exit (). */
@@ -397,7 +422,7 @@ process_exit (void) {
 	file_close(curr->running);
 
 	sema_up(&curr->wait_sema);
-	sema_down(&curr->free_sema);
+	sema_down(&curr->free_sema); //현재 자식 스레드가 free_sema의 waiter에 대기
 
 	process_cleanup ();
 }
@@ -430,7 +455,10 @@ process_cleanup (void) {
 }
 
 /* Sets up the CPU for running user code in the nest thread.
- * This function is called on every context switch. */
+ * This function is called on every context switch. 
+next? 스레드에서 사용자 코드를 실행하기 위한 CPU를 설정합니다.
+ 이 함수는 컨텍스트가 전환될 때마다 호출됩니다.
+ */
 void
 process_activate (struct thread *next) {
 	/* Activate thread's page tables. */
@@ -502,7 +530,9 @@ static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 /* Loads an ELF executable from FILE_NAME into the current thread.
  * Stores the executable's entry point into *RIP
  * and its initial stack pointer into *RSP.
- * Returns true if successful, false otherwise. */
+ * Returns true if successful, false otherwise. 
+ *  주어진 실행 파일을 메모리에 로드하고, 프로세스의 페이지 디렉터리를 활성화하며, 
+ * 스택을 설정하고, 실행 파일의 시작 주소를 설정하는 역할 */
 static bool
 load (const char *file_name, struct intr_frame *if_) {
 	struct thread *t = thread_current ();
@@ -595,7 +625,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 
 	/* Start address. */
-	if_->rip = ehdr.e_entry;
+	if_->rip = ehdr.e_entry; //ELF 헤더의 시작주소
 
 	/* TODO: Your code goes here.
 	 * TODO: Implement argument passing (see project2/argument_passing.html). */

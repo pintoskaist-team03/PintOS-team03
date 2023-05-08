@@ -124,7 +124,6 @@ check_file_handle (int fd,
   if (file_size != size)
     msg ("size of %s (%zu) differs from expected (%zu)",
           file_name, file_size, size);
-
   /* Read the file block-by-block, comparing data as we go. */
   while (ofs < size)
     {
@@ -143,12 +142,10 @@ check_file_handle (int fd,
       compare_bytes (block, buf + ofs, block_size, ofs, file_name);
       ofs += block_size;
     }
-
   /* Now fail due to wrong file size. */
   if (file_size != size)
     fail ("size of %s (%zu) differs from expected (%zu)",
           file_name, file_size, size);
-
   msg ("verified contents of \"%s\"", file_name);
 }
 
@@ -156,7 +153,6 @@ void
 check_file (const char *file_name, const void *buf, size_t size) 
 {
   int fd;
-
   CHECK ((fd = open (file_name)) > 1, "open \"%s\" for verification",
          file_name);
   check_file_handle (fd, file_name, buf, size);

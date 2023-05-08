@@ -24,14 +24,14 @@ struct gp_registers {
 	uint64_t r11;
 	uint64_t r10;
 	uint64_t r9;
-	uint64_t r8;
-	uint64_t rsi;
-	uint64_t rdi;
-	uint64_t rbp;
-	uint64_t rdx;
-	uint64_t rcx;
-	uint64_t rbx;
-	uint64_t rax;
+	uint64_t r8; 
+	uint64_t rsi; //source 인덱스 레지스터, 
+	uint64_t rdi; //destination 인덱스 레지스터, arg의 개수 저장
+	uint64_t rbp; //베이스 포인터 레지스터(스택의 시작점)
+	uint64_t rdx; //데이터 레지스터
+	uint64_t rcx; //카운터 레지스터
+	uint64_t rbx; //베이스 레지스터
+	uint64_t rax;// 누산기(accumulator) 레지스터
 } __attribute__((packed));
 
 struct intr_frame {
@@ -52,12 +52,12 @@ struct intr_frame {
 	uint64_t error_code;
 /* Pushed by the CPU.
    These are the interrupted task's saved registers. */
-	uintptr_t rip;
+	uintptr_t rip; //프로세스가 읽고 있는 현재 명령의 위치를 가리키는 명령 포인터 레지스터
 	uint16_t cs;
 	uint16_t __pad5;
 	uint32_t __pad6;
 	uint64_t eflags;
-	uintptr_t rsp;
+	uintptr_t rsp; //스택 포인터 레지스터(스택의 꼭대기)
 	uint16_t ss;
 	uint16_t __pad7;
 	uint32_t __pad8;

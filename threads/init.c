@@ -74,8 +74,8 @@ main (void) {
 	bss_init ();
 
 	/* Break command line into arguments and parse options. */
-	argv = read_command_line ();
-	argv = parse_options (argv);
+	argv = read_command_line (); //kernel command line을 읽어와서 arguments로나눔
+	argv = parse_options (argv); //command line에서 options을 읽어옴
 
 	/* Initialize ourselves as a thread so we can use locks,
 	   then enable console locking. */
@@ -245,6 +245,7 @@ run_task (char **argv) {
 		run_test (task);
 	} else {
 		process_wait (process_create_initd (task));
+		//프로세스를 생성하고, 생성한 프로세스가 종료될 때 까지 대기
 	}
 #else
 	run_test (task);

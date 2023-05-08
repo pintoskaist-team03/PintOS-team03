@@ -66,6 +66,8 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
+//rax : 시스템 콜 넘버, 최종 값을 리턴받는 주소
+//리턴값을 rax에 담는게 최종 목적
     switch (f->R.rax) // rax는 system call number이다.
     {
 	case SYS_HALT:
@@ -81,7 +83,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
         exec(f->R.rdi);
         break;
     case SYS_WAIT:
-        f->R.rax = process_wait(f->R.rdi);
+        f->R.rax = wait(f->R.rdi);
         break;		
     case SYS_CREATE:
         f->R.rax = create(f->R.rdi, f->R.rsi);
@@ -105,7 +107,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
         seek(f->R.rdi, f->R.rsi);
         break;
     case SYS_TELL:
-        f->R.rax = tell(f->R.rdi);
+        f->R.rax = tell(f->R.rdi); 
         break;
     case SYS_CLOSE:
         close(f->R.rdi);
@@ -131,6 +133,8 @@ tid_t fork (const char *thread_name,struct intr_frame *f){
 	return process_fork(thread_name,f);
 }
 
+/*현재 프로세스를 cmd_line에서 지정된 인수를 전달하여 이름이 지정된 실행 파일로 변경
+새로운 프로그램을 실행하기 위해 현재 프로세스를 교체하는 역할*/
 int exec (const char *file){
 /*
 현재의 프로세스가 cmd_line에서 이름이 주어지는 실행가능한 프로세스로 변경됩니다. 
@@ -145,7 +149,7 @@ exit state -1을 반환하며 프로세스가 종료됩니다.
 	// 문제점) SYS_EXEC - process_exec의 process_cleanup 때문에 f->R.rdi 날아감.
 	// 여기서 file_name 동적할당해서 복사한 뒤, 그걸 넘겨주기
 	int siz = strlen(file)+1;
-	char *file_copy = palloc_get_page(PAL_ZERO); //근데 이해 안감,,
+	char *file_copy = palloc_get_page(PAL_ZERO); 
 	strlcpy(file_copy,file,siz);
 
 	if(process_exec(file_copy) == -1)
@@ -158,6 +162,7 @@ int wait (tid_t pid){
 	return process_wait(pid);
 }
 bool create(const char *file, unsigned initial_size){
+	//요청한 이름, size 의 파일를 생성
 	check_address(file);
 	return filesys_create(file,initial_size);
 }
@@ -239,14 +244,15 @@ void seek (int fd, unsigned position) {
 	/* 파일 디스크립터를 이용하여 파일 객체 검색 */
 	struct file *fileobj = process_get_file(fd);
 	file_seek(fileobj, position);
-/* 해당 열린 파일의 위치(offset)를 position만큼 이동 */
+/* 해당 열린 파일의 위치(offset)를 position만큼 이동
+: 파일의 특정 위치로 이동하여 원하는 데이터를 읽거나 쓸 수 있음 */
 }
 
 unsigned tell (int fd) {
 	/* 파일 디스크립터를 이용하여 파일 객체 검색 */
 	struct file *fileobj = process_get_file(fd);
-	file_tell(fileobj);
-/* 해당 열린 파일의 위치를 반환 */
+	return file_tell(fileobj);
+/* 해당 열린 파일의 위치를 반환  */
 }
 
 void close (int fd) {
@@ -257,6 +263,7 @@ void close (int fd) {
 
 
 void check_address(void *addr){
+	//유저영역이 아니거나, 물리주소와 맵핑되어 있는 페이지가 없다면 종료
 	struct thread *curr = thread_current();
 	if(addr== NULL || !is_user_vaddr(addr)|| pml4_get_page(curr->pml4, addr) == NULL){
 		exit(-1);
