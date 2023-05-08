@@ -203,7 +203,7 @@ thread_create (const char *name, int priority,
 
 	//2-4 file descriptor
 	//t->fdt = palloc_get_page(PAL_ZERO);//확인) multi-oom : need more pages to accomodate 10 stacks of 126 opens
-	t->fdt = palloc_get_multiple(PAL_ZERO,FDT_PAGES); //오ㅐ 3인지?
+	t->fdt = palloc_get_multiple(PAL_ZERO,FDT_PAGES); //오ㅐ 3인지?FDT_PAGES
 	t->next_fd = 2; //0: stdin, 1 stdout
 
 	/* Call the kernel_thread if it scheduled.

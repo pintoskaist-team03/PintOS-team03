@@ -53,12 +53,12 @@ struct file *process_get_file (int fd){
 	}
 	return NULL;	/* 없을 시 NULL 리턴 */
 }
-int process_add_file (struct file *f){
+int process_add_file (struct file *f){ //FDCOUNT_LIMIT
 /* 파일 객체를 파일 디스크립터 테이블에 추가*/
 	// struct thread *curr = thread_current();
 	// int fd = curr->next_fd;
 	
-	// if(fd >64){ //크기 지정 어캐하징.
+	// if(fd >128){ //크기 지정 어캐하징.
 	// 	return -1;
 	// }
 	// curr->fdt[fd] = f;
@@ -323,7 +323,7 @@ process_exec (void *f_name) {
 
 	file_name = argv[0];
 	/* We first kill the current context */
-	process_cleanup ();
+	process_cleanup (); 
 
 	/* And then load the binary */
 	success = load (file_name, &_if);
@@ -331,7 +331,8 @@ process_exec (void *f_name) {
 	void **rspp = &_if.rsp;
 	argument_stack(argv, argc, &_if.rsp);
 	_if.R.rdi = argc;
-	_if.R.rsi = *rspp + sizeof(void *);
+	//_if.R.rsi = *rspp + sizeof(void *);
+	_if.R.rsi = _if.rsp + sizeof(void *);
 
 	//hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 	/* If load failed, quit. */
@@ -394,7 +395,6 @@ process_wait (tid_t child_tid UNUSED) {
 	if(child == NULL){
 		return -1;
 	}
-
 	sema_down(&child->wait_sema); // 부모 프로세스가 자식 프로세스의 실행을 기다리도록 하는 동기화 작업.부모 프로세스의 실행을 일시 정지
 	list_remove(&child->child_elem);
 	/*주어진 원소(child_elem)를 연결 리스트에서 제거하는 작업을 수행
@@ -417,6 +417,10 @@ process_exit (void) {
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */ 
 	//palloc_free_page(curr->fdt); // 메모리 누수
+	for(int i = 0; i<FDCOUNT_LIMIT;i++){
+		file_close(curr->fdt[i]);
+	}
+
 	palloc_free_multiple(curr->fdt,FDT_PAGES);
 
 	file_close(curr->running);
@@ -447,7 +451,13 @@ process_cleanup (void) {
 		 * process page directory.  We must activate the base page
 		 * directory before destroying the process's page
 		 * directory, or our active page directory will be one
-		 * that's been freed (and cleared). */
+		 * that's been freed (and cleared). 
+		 * 여기서 올바른 순서가 중요합니다.  페이지 디렉터리를 전환하기 전에 cur->pagedir을 NULL로 설정해야 합니다,
+ 타이머 인터럽트가 프로세스 페이지 디렉토리로 다시 전환할 수 없도록 해야 합니다.  
+ 프로세스의 페이지 디렉터리를 파괴하기 전에 기본 페이지 디렉터리를 활성화해야 합니다.
+ 그렇지 않으면 활성 페이지 디렉터리가 해제된(그리고
+ 하나가 됩니다.
+		 * */
 		curr->pml4 = NULL;
 		pml4_activate (NULL);
 		pml4_destroy (pml4);
