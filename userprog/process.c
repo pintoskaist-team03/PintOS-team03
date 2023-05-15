@@ -28,6 +28,7 @@ static void initd (void *f_name);
 static void __do_fork (void *);
 void argument_stack(char **argv, int argc, void **rsp);
 struct thread *get_child_process(int pid);
+static bool setup_stack (struct intr_frame *if_);
 
 /*------project2 추가함수--------*/
 struct thread *get_child_process(int pid){
@@ -493,7 +494,6 @@ struct ELF64_PHDR {
 #define ELF ELF64_hdr
 #define Phdr ELF64_PHDR
 
-static bool setup_stack (struct intr_frame *if_);
 static bool validate_segment (const struct Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes,
@@ -703,7 +703,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		memset (kpage + page_read_bytes, 0, page_zero_bytes);
 
 		/* Add the page to the process's address space. */
-		if (!install_page (upage, kpage, writable)) {
+		if (!install_page (upage, kpage, writable)) { //모든 페이지를 pml4 에 세팅
 			printf("fail\n");
 			palloc_free_page (kpage);
 			return false;
