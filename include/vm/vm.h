@@ -45,7 +45,9 @@ struct page {
 	void *va;              /* Address in terms of user space */
 	struct frame *frame;   /* Back reference for frame */
 
-	/* Your implementation */
+	/* Your implementation 내가 추가 */
+	struct hash_elem hash_elem;
+	bool writable;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
@@ -63,6 +65,9 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
+
+	//일단 추가
+	struct list_elem elem;
 };
 
 /* The function table for page operations.
@@ -83,8 +88,10 @@ struct page_operations {
 
 /* Representation of current process's memory space.
  * We don't want to force you to obey any specific design for this struct.
- * All designs up to you for this. */
+ * All designs up to you for this.
+ * project3-1 구현 */
 struct supplemental_page_table {
+	struct hash pages;
 };
 
 #include "threads/thread.h"
@@ -108,5 +115,9 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage,
 void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
+
+/*추가*/
+unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
+bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
 
 #endif  /* VM_VM_H */

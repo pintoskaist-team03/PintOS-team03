@@ -7,6 +7,7 @@
 
 typedef bool pte_for_each_func (uint64_t *pte, void *va, void *aux);
 
+
 uint64_t *pml4e_walk (uint64_t *pml4, const uint64_t va, int create);
 uint64_t *pml4_create (void);
 bool pml4_for_each (uint64_t *, pte_for_each_func *, void *);
@@ -21,6 +22,9 @@ bool pml4_is_accessed (uint64_t *pml4, const void *upage);
 void pml4_set_accessed (uint64_t *pml4, const void *upage, bool accessed);
 
 #define is_writable(pte) (*(pte) & PTE_W)
+
+/*페이지 테이블 엔트리(PTE)의 주인이 유저인지 커널인지 확인합니다. 
+* user pte 라면 유저/커널, kernel pte 라면 커널 only. */
 #define is_user_pte(pte) (*(pte) & PTE_U)
 #define is_kern_pte(pte) (!is_user_pte (pte))
 

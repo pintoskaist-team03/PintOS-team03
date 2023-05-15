@@ -117,6 +117,8 @@ pt_for_each (uint64_t *pt, pte_for_each_func *func, void *aux,
 	return true;
 }
 
+/*각 pml4가 유효한 entry를 가지고 있는지 검사하며, 검사를 위해 보조값 aux를 받는 함수 func를 추가적으로 활용합니다.
+ va는 entry의 가상주소입니다. pte_for_each_func가 false를 리턴하면, 반복을 멈추고 false를 리턴*/
 static bool
 pgdir_for_each (uint64_t *pdp, pte_for_each_func *func, void *aux,
 		unsigned pml4_index, unsigned pdp_index) {
