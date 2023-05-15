@@ -27,6 +27,7 @@ enum vm_type {
 #include "vm/uninit.h"
 #include "vm/anon.h"
 #include "vm/file.h"
+#include "include/lib/kernel/hash.h"
 #ifdef EFILESYS
 #include "filesys/page_cache.h"
 #endif
@@ -65,9 +66,6 @@ struct page {
 struct frame {
 	void *kva;
 	struct page *page;
-
-	//일단 추가
-	struct list_elem elem;
 };
 
 /* The function table for page operations.
@@ -116,8 +114,6 @@ void vm_dealloc_page (struct page *page);
 bool vm_claim_page (void *va);
 enum vm_type page_get_type (struct page *page);
 
-/*추가*/
-unsigned page_hash (const struct hash_elem *p_, void *aux UNUSED);
-bool page_less (const struct hash_elem *a_, const struct hash_elem *b_, void *aux UNUSED);
+
 
 #endif  /* VM_VM_H */

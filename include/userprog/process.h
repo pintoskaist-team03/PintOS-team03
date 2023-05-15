@@ -1,3 +1,4 @@
+#define vm
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
 
