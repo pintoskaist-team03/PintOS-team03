@@ -1,6 +1,9 @@
 /* file.c: Implementation of memory backed file object (mmaped object). */
 
 #include "vm/vm.h"
+#include "include/threads/vaddr.h"
+#include "userprog/process.h"
+#include "include/threads/mmu.h"
 
 static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
@@ -50,9 +53,60 @@ file_backed_destroy (struct page *page) {
 void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
+
+	size_t read_bytes = length < file_length(file) ? length:file_length;
+	size_t zero_bytes = PGSIZE-(read_bytes%PGSIZE);
+
+	thread_current()->page_cnt = zero_bytes==0?(read_bytes/PGSIZE):(read_bytes/PGSIZE+1);
+
+	void *start_addr = addr;
+
+	struct file *reopen_file = file_reopen(file); //mmap하는 동안 외부에서 해당 파일을 close()할 경우 예외처리
+
+	while (read_bytes>0 || zero_bytes > 0)
+	{
+		size_t tmp_read_bytes = read_bytes <PGSIZE ? read_bytes:PGSIZE;
+
+		struct lazy_load_info *aux = NULL;
+		aux = (struct lazy_load_info*)malloc(sizeof(struct lazy_load_info));
+		aux->file = reopen_file;
+		aux->ofs = offset;
+		aux->page_read_bytes = read_bytes;
+		if(read_bytes - tmp_read_bytes < 0){
+			aux->page_zero_bytes = zero_bytes;
+		}
+
+		if(!vm_alloc_page_with_initializer(VM_FILE,addr,writable,lazy_file_load_segment,aux)){
+			return NULL;
+		}
+
+		read_bytes -= tmp_read_bytes;
+		addr += PGSIZE;
+		offset += tmp_read_bytes;
+		if(read_bytes - tmp_read_bytes < 0){
+			zero_bytes -= zero_bytes;
+		}
+
+	}
+	return start_addr;
 }
 
 /* Do the munmap */
 void
 do_munmap (void *addr) {
+	struct thread *curr = thread_current();
+	struct page *page = spt_find_page(&curr->spt,addr);
+
+	int num_page =  curr->page_cnt;
+
+	while(num_page == 0){
+		
+		
+		if(pml4_is_dirty(&curr->pml4,addr))
+			file_write_at()
+		addr -= PGSIZE;
+
+	}
+
+
 }

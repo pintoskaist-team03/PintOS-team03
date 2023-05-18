@@ -15,6 +15,7 @@
 #include "lib/kernel/stdio.h"
 #include "threads/synch.h"
 #include "userprog/process.h"
+#include "vm/vm.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -34,6 +35,10 @@ int write (int fd, const void *buffer, unsigned size) ;
 void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
+
+/*project3 추가*/
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
 
 /* System call.
  *
@@ -66,6 +71,9 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
+	/*p3 - Growth stack*/
+	thread_current()->user_rsp = f->rsp;
+
     switch (f->R.rax) // rax는 system call number이다.
     {
 	case SYS_HALT:
@@ -110,6 +118,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
     case SYS_CLOSE:
         close(f->R.rdi);
         break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.rcx, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap (f->R.rdi);
+		break;
     default:
         exit(-1);
         break;
@@ -253,6 +267,25 @@ void close (int fd) {
 	/* 해당 파일 디스크립터에 해당하는 파일을 닫음 */
 	struct thread *curr = thread_current();
 	curr->fdt[fd] = 0; /* 파일 디스크립터 엔트리 초기화 */
+}
+
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+	struct file *fileobj = process_get_file(fd);
+	if(fileobj == NULL)
+		return NULL;
+
+	off_t size = file_length(fileobj);
+
+	if(size == NULL || length == NULL || fd == 0 || fd == 1 || addr == NULL || is_kernel_vaddr(addr))
+		return NULL;
+	if(spt_find_page(&thread_current()->spt,addr))
+		return NULL;
+
+	return do_mmap(addr,length,writable,fileobj,offset);
+}
+
+void munmap (void *addr){
+	do_munmap(addr);
 }
 
 

@@ -756,13 +756,11 @@ install_page (void *upage, void *kpage, bool writable) {
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
-/*추가 구조체*/
-struct lazy_load_info{
-	struct file *file;
-	uint32_t  page_read_bytes;
-	uint32_t  page_zero_bytes;
-	off_t ofs;
-};
+bool
+lazy_file_load_segment(struct page *page, void *aux){
+	return false;
+}
+
 
 // 파일로부터 세그먼트를 메모리에 로드하는 역할
 static bool

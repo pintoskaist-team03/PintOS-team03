@@ -15,5 +15,12 @@ struct file *process_get_file (int fd);
 int process_add_file (struct file *f);
 void process_close_file(int fd);
 
+bool lazy_file_load_segment(struct page *page, void *aux);
 
+struct lazy_load_info{
+	struct file *file;
+	uint32_t  page_read_bytes;
+	uint32_t  page_zero_bytes;
+	off_t ofs;
+};
 #endif /* userprog/process.h */

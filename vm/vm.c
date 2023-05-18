@@ -68,8 +68,6 @@ bool vm_alloc_page_with_initializer (enum vm_type type, void *upage, bool writab
 		}
 		else if(VM_TYPE(type)==VM_FILE){
 			uninit_new(new_page,upage,init,type,aux,file_backed_initializer);
-		}		else {
-			uninit_new(new_page, upage, init, type, aux, NULL);
 		}
 		new_page->writable = writable;
 		/* TODO: Insert the page into the spt. */
@@ -173,6 +171,8 @@ vm_get_frame (void) {
 /* Growing the stack. */
 static void
 vm_stack_growth (void *addr UNUSED) {
+	void *growth_stk = pg_round_down(addr);
+	vm_alloc_page_with_initializer(VM_ANON,growth_stk,1,NULL,NULL);
 }
 
 /* Handle the fault on write_protected page */
@@ -189,7 +189,23 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 	struct page *page = NULL;
 	/* TODO: Validate the fault */
 	/* TODO: Your code goes here */
-	if(not_present){ //True: not-present page:  페이지가 메모리에 존재하지 않는 경우
+	uintptr_t usr_rsp;
+
+	if(user){ 
+		usr_rsp = f->rsp;
+	}else{
+		usr_rsp = thread_current()->user_rsp;
+	}
+
+	if(not_present){ //True: not-present page:  페이지가 물리메모리에 존재하지 않는 경우
+
+		if(USER_STACK - (1<<20) <= addr && (USER_STACK>=addr) && (usr_rsp-8 <= addr)){
+			// printf("fault_addr: %x\n",addr);
+			// printf("USER_STACK: %x\n",USER_STACK);
+			// printf("USER_STACK - 0x100000: %x\n",USER_STACK - 0x100000);
+			vm_stack_growth(addr);
+		}
+
 		page = spt_find_page(spt,addr);
 		if(page == NULL){
 			return false;
@@ -233,7 +249,7 @@ vm_do_claim_page (struct page *page) {
 	frame->page = page;
 	page->frame = frame;
 
-	/* TODO: Insert page table entry to map page's VA to frame's PA. */
+	/* TODO: Insert page table entry to map page's VA to frame's PA. */	
 	pml4_set_page(curr->pml4, page->va, frame->kva, page->writable);
 
 	return swap_in(page, frame->kva);
@@ -283,8 +299,26 @@ void destroy_hash_elem(struct hash_elem *e, void *aux){
 void
 supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
-	 * TODO: writeback all the modified contents to the storage. */
+	스레드에 의해 보조 페이지 테이블이 소유된 경우 해당 테이블을 파괴해야 합니다.
+	 * TODO: writeback all the modified contents to the storage. 
+	 변경된 내용을 저장소에 기록*/
+
+
+	 /*1. 이를 위해 보조 페이지 테이블에 저장된 페이지 엔트리를 반복하여 각 페이지에 대해 파괴 작업을 수행해야 합니다. 
+	 예를 들어, hash_destroy() 함수를 사용하여 해시 테이블을 파괴할 수 있습니다.
+	 2.
+	 */
 	/*페이지 엔트리를 반복하면서 테이블의 페이지에 destroy(page)를 호출해야함 */
+	// struct hash_iterator i;
+	// hash_first(&i,&spt->pages);
+	// while(hash_next(&i)){
+	// 	struct page *page = hash_entry(hash_cur(&i), struct page, hash_elem);
+
+	// 	if(page->operations->type == VM_FILE){
+			//do_mumap(page->va); 구현 필요
+	// 	}
+	// }
+
 	hash_clear(&spt->pages,&destroy_hash_elem);
 }
 
