@@ -210,6 +210,9 @@ vm_try_handle_fault (struct intr_frame *f UNUSED, void *addr UNUSED,
 		if(page == NULL){
 			return false;
 		}
+		if (write == 1 && page->writable == 0) //추가
+			return false;
+			
 		return vm_do_claim_page (page);
 	}
 	return false;
@@ -321,6 +324,9 @@ supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct
         if (parent_page->operations->type != VM_UNINIT) { 
             struct page* child_page = spt_find_page(dst, upage);
             memcpy(child_page->frame->kva, parent_page->frame->kva, PGSIZE);
+			if(parent_page->operations->type == VM_FILE){
+				file_backed_initializer(child_page,VM_FILE,child_page->frame->kva);
+			}
         }
     }
   return true;  
@@ -338,24 +344,7 @@ supplemental_page_table_kill (struct supplemental_page_table *spt UNUSED) {
 	/* TODO: Destroy all the supplemental_page_table hold by thread and
 	스레드에 의해 보조 페이지 테이블이 소유된 경우 해당 테이블을 파괴해야 합니다.
 	 * TODO: writeback all the modified contents to the storage. 
-	 변경된 내용을 저장소에 기록*/
-
-
-	 /*1. 이를 위해 보조 페이지 테이블에 저장된 페이지 엔트리를 반복하여 각 페이지에 대해 파괴 작업을 수행해야 합니다. 
-	 예를 들어, hash_destroy() 함수를 사용하여 해시 테이블을 파괴할 수 있습니다.
-	 2.
-	 */
-	/*페이지 엔트리를 반복하면서 테이블의 페이지에 destroy(page)를 호출해야함 */
-	// struct hash_iterator i;
-	// hash_first(&i,&spt->pages);
-	// while(hash_next(&i)){
-	// 	struct page *page = hash_entry(hash_cur(&i), struct page, hash_elem);
-
-	// 	if(page->operations->type == VM_FILE){
-			//do_mumap(page->va); 구현 필요
-	// 	}
-	// }
-
+	 변경된 내용을 저장소에 기록*/ 
 	hash_clear(&spt->pages,&destroy_hash_elem);
 }
 

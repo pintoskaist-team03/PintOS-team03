@@ -21,7 +21,7 @@
 #ifdef VM
 #include "vm/vm.h"
 #endif
-
+#define VM
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
@@ -153,7 +153,7 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	struct thread *child = get_child_process(pid); 
 	sema_down(&child->fork_sema);
 	if(child->exit_status == -1){
-		//sema_up(&child->free_sema);
+		sema_up(&child->free_sema);
 		return TID_ERROR;
 	}
 	return pid;
@@ -838,7 +838,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		aux->page_read_bytes = page_read_bytes;
 		aux->page_zero_bytes = page_zero_bytes;
 
-		if (!vm_alloc_page_with_initializer (VM_ANON, upage,
+		if (!vm_alloc_page_with_initializer(VM_ANON, upage,
 					writable, lazy_load_segment, aux))
 			return false;
 
