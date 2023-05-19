@@ -76,7 +76,7 @@ do_mmap (void *addr, size_t length, int writable,
 			aux->page_zero_bytes = zero_bytes;
 		}
 
-		if(!vm_alloc_page_with_initializer(VM_FILE,addr,writable,lazy_file_load_segment,aux)){
+		if(!vm_alloc_page_with_initializer(VM_FILE,addr,writable,lazy_load_segment,aux)){
 			return NULL;
 		}
 
@@ -101,12 +101,15 @@ do_munmap (void *addr) {
 
 	while(num_page == 0){
 		
+		struct lazy_load_info *tmp_aux = (struct lazy_load_info*)page->uninit.aux;
 		
-		if(pml4_is_dirty(&curr->pml4,addr))
-			file_write_at()
+		if(pml4_is_dirty(&curr->pml4,addr)){
+			file_write_at(tmp_aux->file,addr,tmp_aux->page_read_bytes, tmp_aux->ofs);
+			pml4_set_dirty(&curr->pml4,addr,0);
+		}
+		pml4_clear_page(&curr->pml4,addr);
 		addr -= PGSIZE;
-
+		page = spt_find_page(&curr->spt,addr);
+		num_page -= 1;
 	}
-
-
 }

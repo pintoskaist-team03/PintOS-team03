@@ -763,7 +763,7 @@ lazy_file_load_segment(struct page *page, void *aux){
 
 
 // 파일로부터 세그먼트를 메모리에 로드하는 역할
-static bool
+bool
 lazy_load_segment (struct page *page, void *aux) {
 	/* TODO: Load the segment from the file */
 	/* TODO: This called when the first page fault occurs on address VA. */
