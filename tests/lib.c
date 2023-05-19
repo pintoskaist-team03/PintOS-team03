@@ -120,11 +120,11 @@ check_file_handle (int fd,
   /* Warn about file of wrong size.  Don't fail yet because we
      may still be able to get more information by reading the
      file. */
+
   file_size = filesize (fd);
   if (file_size != size)
     msg ("size of %s (%zu) differs from expected (%zu)",
           file_name, file_size, size);
-
   /* Read the file block-by-block, comparing data as we go. */
   while (ofs < size)
     {
@@ -139,15 +139,17 @@ check_file_handle (int fd,
       if (ret_val != block_size)
         fail ("read of %zu bytes at offset %zu in \"%s\" returned %zu",
               block_size, ofs, file_name, ret_val);
-
       compare_bytes (block, buf + ofs, block_size, ofs, file_name);
       ofs += block_size;
+
     }
 
   /* Now fail due to wrong file size. */
-  if (file_size != size)
+  if (file_size != size){
     fail ("size of %s (%zu) differs from expected (%zu)",
           file_name, file_size, size);
+  }
+
 
   msg ("verified contents of \"%s\"", file_name);
 }
@@ -156,7 +158,6 @@ void
 check_file (const char *file_name, const void *buf, size_t size) 
 {
   int fd;
-
   CHECK ((fd = open (file_name)) > 1, "open \"%s\" for verification",
          file_name);
   check_file_handle (fd, file_name, buf, size);
@@ -168,6 +169,7 @@ void
 compare_bytes (const void *read_data_, const void *expected_data_, size_t size,
                size_t ofs, const char *file_name) 
 {
+  //compare_bytes (block, buf + ofs, block_size, ofs, file_name);
   const uint8_t *read_data = read_data_;
   const uint8_t *expected_data = expected_data_;
   size_t i, j;

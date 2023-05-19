@@ -54,39 +54,34 @@ void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
 
-	size_t read_bytes = length < file_length(file) ? length:file_length;
-	size_t zero_bytes = PGSIZE-(read_bytes%PGSIZE);
-
-	thread_current()->page_cnt = zero_bytes==0?(read_bytes/PGSIZE):(read_bytes/PGSIZE+1);
-
-	void *start_addr = addr;
+	size_t read_bytes = length < file_length(file) ? length:file_length(file);
+	size_t zero_bytes = read_bytes%PGSIZE ==0 ? 0 : PGSIZE-(read_bytes%PGSIZE);
+	void * start_addr = addr;
+	
+	thread_current()->page_cnt = zero_bytes==0?(read_bytes/PGSIZE):(read_bytes/PGSIZE)+1;
 
 	struct file *reopen_file = file_reopen(file); //mmap하는 동안 외부에서 해당 파일을 close()할 경우 예외처리
 
 	while (read_bytes>0 || zero_bytes > 0)
 	{
 		size_t tmp_read_bytes = read_bytes <PGSIZE ? read_bytes:PGSIZE;
+		size_t tmp_zero_bytes = PGSIZE - tmp_read_bytes;
 
 		struct lazy_load_info *aux = NULL;
 		aux = (struct lazy_load_info*)malloc(sizeof(struct lazy_load_info));
 		aux->file = reopen_file;
 		aux->ofs = offset;
-		aux->page_read_bytes = read_bytes;
-		if(read_bytes - tmp_read_bytes < 0){
-			aux->page_zero_bytes = zero_bytes;
-		}
+		aux->page_read_bytes = tmp_read_bytes;
+		aux->page_zero_bytes = tmp_zero_bytes;
 
 		if(!vm_alloc_page_with_initializer(VM_FILE,addr,writable,lazy_load_segment,aux)){
 			return NULL;
 		}
 
 		read_bytes -= tmp_read_bytes;
+		zero_bytes -= tmp_zero_bytes;
 		addr += PGSIZE;
 		offset += tmp_read_bytes;
-		if(read_bytes - tmp_read_bytes < 0){
-			zero_bytes -= zero_bytes;
-		}
-
 	}
 	return start_addr;
 }
@@ -96,19 +91,16 @@ void
 do_munmap (void *addr) {
 	struct thread *curr = thread_current();
 	struct page *page = spt_find_page(&curr->spt,addr);
-
 	int num_page =  curr->page_cnt;
-
-	while(num_page == 0){
-		
+	while(num_page != 0){
 		struct lazy_load_info *tmp_aux = (struct lazy_load_info*)page->uninit.aux;
 		
-		if(pml4_is_dirty(&curr->pml4,addr)){
+		if(pml4_is_dirty(curr->pml4,addr)){
 			file_write_at(tmp_aux->file,addr,tmp_aux->page_read_bytes, tmp_aux->ofs);
-			pml4_set_dirty(&curr->pml4,addr,0);
+			pml4_set_dirty(curr->pml4,addr,0);
 		}
-		pml4_clear_page(&curr->pml4,addr);
-		addr -= PGSIZE;
+		pml4_clear_page(curr->pml4,addr);
+		addr += PGSIZE;
 		page = spt_find_page(&curr->spt,addr);
 		num_page -= 1;
 	}

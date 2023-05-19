@@ -119,7 +119,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
         close(f->R.rdi);
         break;
 	case SYS_MMAP:
-		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.rcx, f->R.r8);
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
 		break;
 	case SYS_MUNMAP:
 		munmap (f->R.rdi);
@@ -166,7 +166,6 @@ exit state -1을 반환하며 프로세스가 종료됩니다.
 		return -1;
 	
 	NOT_REACHED();
-	return 0;
 }
 int wait (tid_t pid){
 	return process_wait(pid);
@@ -212,13 +211,27 @@ int read (int fd, void *buffer, unsigned size) {
 버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
 /* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저
 장 후 읽은 바이트 수를 리턴  */ 
+	check_address(buffer);
+
 	lock_acquire(&filesys_lock);
+	if(fd == 1){
+		lock_release(&filesys_lock);
+		return -1;
+	}
+
 	if(fd == 0){
 		input_getc();
 		lock_release(&filesys_lock);
 		return size;
 	}
   	struct file *fileobj= process_get_file(fd);
+
+	// struct page *page = spt_find_page(&thread_current()->pml4,buffer);
+	// if(page != NULL && page->writable == 0){
+	// 	lock_release(&filesys_lock);
+	// 	exit(-1);
+	// }
+		
 	size = file_read(fileobj,buffer,size);
 	lock_release(&filesys_lock);	
 	return size;
@@ -231,6 +244,8 @@ int write (int fd, const void *buffer, unsigned size) {
 후 버퍼의 크기 리턴 (putbuf() 이용) */
 /* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기
 만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+	check_address(buffer);
+
 	lock_acquire(&filesys_lock);
 	if(fd == 1){
 		 putbuf(buffer, size);  //문자열을 화면에 출력해주는 함수
@@ -270,17 +285,23 @@ void close (int fd) {
 }
 
 void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
+	if(offset % PGSIZE != 0){
+		return NULL;
+	}
+	if(fd == 0 || fd == 1){
+		exit(-1);
+	}
 	struct file *fileobj = process_get_file(fd);
-	if(fileobj == NULL)
-		return NULL;
 
-	off_t size = file_length(fileobj);
-
-	if(size == NULL || length == NULL || fd == 0 || fd == 1 || addr == NULL || is_kernel_vaddr(addr))
+	if(fileobj == NULL){
 		return NULL;
-	if(spt_find_page(&thread_current()->spt,addr))
+	}
+	if(length == 0 || KERN_BASE <= length || addr == NULL || is_kernel_vaddr(addr) || pg_round_down(addr) != addr){
 		return NULL;
-
+	}
+	if (spt_find_page(&thread_current()->spt, addr)) {
+        return NULL;
+	}
 	return do_mmap(addr,length,writable,fileobj,offset);
 }
 

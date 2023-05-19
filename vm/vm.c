@@ -264,31 +264,68 @@ supplemental_page_table_init (struct supplemental_page_table *spt UNUSED) {
 }
 
 /* Copy supplemental page table from src to dst */
+// bool
+// supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
+// 		struct supplemental_page_table *src UNUSED) {
+// /* src의 supplemental page table를 반복하면서
+// 	dst의 supplemental page table의 엔트리의 정확한 복사본을 만드세요 */
+// 	/*src의 각각 페이지를 반복하면서 dst의 엔트리에 정확히 복사*/
+
+// 	struct hash_iterator i;
+
+// 	hash_first(&i, &src->pages);
+// 	while (hash_next (&i)) {
+// 		struct page *src_page = hash_entry (hash_cur (&i), struct page, hash_elem);
+// 		if (VM_TYPE(src_page->operations->type) == VM_UNINIT) {
+// 			vm_alloc_page_with_initializer(src_page->uninit.type, src_page->va, src_page->writable, src_page->uninit.init, src_page->uninit.aux);
+// 			continue;
+// 		}
+// 		vm_alloc_page(src_page->operations->type, src_page->va, src_page->writable);
+// 		struct page *dst_page = spt_find_page(dst, src_page->va);
+// 		vm_claim_page(src_page->va);
+
+// 		memcpy (dst_page->frame->kva, src_page->frame->kva, (size_t)PGSIZE);
+// 	}
+// 	return true;
+// }
+
+/* Copy supplemental page table from src to dst */
 bool
-supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED,
-		struct supplemental_page_table *src UNUSED) {
-/* src의 supplemental page table를 반복하면서
-	dst의 supplemental page table의 엔트리의 정확한 복사본을 만드세요 */
-	/*src의 각각 페이지를 반복하면서 dst의 엔트리에 정확히 복사*/
+supplemental_page_table_copy (struct supplemental_page_table *dst UNUSED, struct supplemental_page_table *src UNUSED) {
+    // 해시테이블을 순회하기 위해 필요한 구조체
+    struct hash_iterator i;
+    /* 1. SRC의 해시 테이블의 각 bucket 내 elem들을 모두 복사한다. */
+    hash_first(&i, &src->pages);
+    while (hash_next(&i)){ // src의 각각의 페이지를 반복문을 통해 복사
+        struct page *parent_page = hash_entry (hash_cur (&i), struct page, hash_elem);   // 현재 해시 테이블의 element 리턴
+        enum vm_type type = page_get_type(parent_page);     // 부모 페이지의 type
+        void *upage = parent_page->va;                          // 부모 페이지의 가상 주소
+        bool writable = parent_page->writable;              // 부모 페이지의 쓰기 가능 여부
+        vm_initializer *init = parent_page->uninit.init;    // 부모의 초기화되지 않은 페이지들 할당 위해 
+        void* aux = parent_page->uninit.aux;
 
-	struct hash_iterator i;
+        // 부모 타입이 uninit인 경우
+        if(parent_page->operations->type == VM_UNINIT) { 
+            if(!vm_alloc_page_with_initializer(type, upage, writable, init, aux))
+                // 자식 프로세스의 유저 메모리에 UNINIT 페이지를 하나 만들고 SPT 삽입.
+                return false;
+        }
+        else {  // 즉, else문의 코드는 실제 부모의 물리메모리에 매핑되어있던 데이터는 없는상태이다 그래서 아래에서 memcpy로 부모의 데이터 또한 복사해 넣어준다.
+            if(!vm_alloc_page(type, upage, writable)) // type에 맞는 페이지 만들고 SPT 삽입.
+                return false;
+            if(!vm_claim_page(upage))  // 바로 물리 메모리와 매핑하고 Initialize한다.
+                return false;
+        }
 
-	hash_first(&i, &src->pages);
-	while (hash_next (&i)) {
-		struct page *src_page = hash_entry (hash_cur (&i), struct page, hash_elem);
-		if (VM_TYPE(src_page->operations->type) == VM_UNINIT) {
-			vm_alloc_page_with_initializer(src_page->uninit.type, src_page->va, src_page->writable, src_page->uninit.init, src_page->uninit.aux);
-			continue;
-		}
-		vm_alloc_page(src_page->operations->type, src_page->va, src_page->writable);
-		struct page *dst_page = spt_find_page(dst, src_page->va);
-		vm_claim_page(src_page->va);
-
-		memcpy (dst_page->frame->kva, src_page->frame->kva, (size_t)PGSIZE);
-	}
-	return true;
-
+        // UNIT이 아닌 모든 페이지에 대응하는 물리 메모리 데이터를 부모로부터 memcpy
+        if (parent_page->operations->type != VM_UNINIT) { 
+            struct page* child_page = spt_find_page(dst, upage);
+            memcpy(child_page->frame->kva, parent_page->frame->kva, PGSIZE);
+        }
+    }
+  return true;  
 }
+
 void destroy_hash_elem(struct hash_elem *e, void *aux){
 	struct page *page = hash_entry(e,struct page, hash_elem);
 	destroy(page);
