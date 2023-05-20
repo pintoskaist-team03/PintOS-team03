@@ -56,15 +56,6 @@ struct file *process_get_file (int fd){
 }
 int process_add_file (struct file *f){
 /* 파일 객체를 파일 디스크립터 테이블에 추가*/
-	// struct thread *curr = thread_current();
-	// int fd = curr->next_fd;
-	
-	// if(fd >64){ //크기 지정 어캐하징.
-	// 	return -1;
-	// }
-	// curr->fdt[fd] = f;
-	// curr->next_fd +=1;
-	// return curr->next_fd; /* 파일 디스크립터 리턴 */
 	struct thread *curr = thread_current();
   //파일 디스크립터 테이블에서 비어있는 자리를 찾습니다.
 	while (curr->next_fd < FDCOUNT_LIMIT  && curr->fdt[curr->next_fd] != NULL) {

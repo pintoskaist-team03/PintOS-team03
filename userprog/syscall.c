@@ -185,13 +185,16 @@ int open (const char *file){
 /* 파일 디스크립터 리턴 */
 /* 해당 파일이 존재하지 않으면 -1 리턴 */
 	check_address(file);
-
+	lock_acquire(&filesys_lock);
 	struct file *fileobj = filesys_open(file);
-	if(fileobj == NULL)
+	if(fileobj == NULL){
+		lock_release(&filesys_lock);
 		return -1;
+	}
 	int fd = process_add_file(fileobj);
 	if(fd == -1) //fd table 꽉참
 		file_close(fileobj);
+	lock_release(&filesys_lock);
 	return fd;
 }
 
@@ -205,12 +208,6 @@ int filesize (int fd){
 	return file_length(fileobj);
 }
 int read (int fd, void *buffer, unsigned size) {
-	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
-/* 파일 디스크립터를 이용하여 파일 객체 검색 */
-/* 파일 디스크립터가 0일 경우 키보드에 입력을 버퍼에 저장 후
-버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
-/* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저
-장 후 읽은 바이트 수를 리턴  */ 
 	check_address(buffer);
 
 	lock_acquire(&filesys_lock);
@@ -225,12 +222,13 @@ int read (int fd, void *buffer, unsigned size) {
 		return size;
 	}
   	struct file *fileobj= process_get_file(fd);
-
-	// struct page *page = spt_find_page(&thread_current()->pml4,buffer);
-	// if(page != NULL && page->writable == 0){
-	// 	lock_release(&filesys_lock);
-	// 	exit(-1);
-	// }
+	if(fileobj){
+		struct page *page = spt_find_page(&thread_current()->spt,buffer);
+		if(page != NULL && page->writable == 0){
+			lock_release(&filesys_lock);
+			exit(-1);
+		}
+	}
 		
 	size = file_read(fileobj,buffer,size);
 	lock_release(&filesys_lock);	
@@ -238,12 +236,7 @@ int read (int fd, void *buffer, unsigned size) {
 }
 
 int write (int fd, const void *buffer, unsigned size) {
-	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
-/* 파일 디스크립터를 이용하여 파일 객체 검색 */
-/* 파일 디스크립터가 1일 경우 버퍼에 저장된 값을 화면에 출력
-후 버퍼의 크기 리턴 (putbuf() 이용) */
-/* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기
-만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+
 	check_address(buffer);
 
 	lock_acquire(&filesys_lock);
@@ -281,6 +274,10 @@ unsigned tell (int fd) {
 void close (int fd) {
 	/* 해당 파일 디스크립터에 해당하는 파일을 닫음 */
 	struct thread *curr = thread_current();
+	struct file *fileobj= process_get_file(fd);
+	if(fileobj == NULL)
+		return;
+	//file_close(fd);
 	curr->fdt[fd] = 0; /* 파일 디스크립터 엔트리 초기화 */
 }
 
