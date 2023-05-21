@@ -21,7 +21,7 @@ void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
 void check_address(void *addr);
-void half(void);
+void halt(void);
 void exit(int status);
 tid_t fork (const char *thread_name,struct intr_frame *f);
 int exec (const char *file);
@@ -52,7 +52,7 @@ void munmap (void *addr);
 #define MSR_STAR 0xc0000081         /* Segment selector msr */
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
-struct lock filesys_lock;
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -86,7 +86,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
         f->R.rax = fork(f->R.rdi, f);
         break;
     case SYS_EXEC:
-        exec(f->R.rdi);
+        f->R.rax = exec(f->R.rdi);
         break;
     case SYS_WAIT:
         f->R.rax = process_wait(f->R.rdi);
@@ -172,7 +172,10 @@ int wait (tid_t pid){
 }
 bool create(const char *file, unsigned initial_size){
 	check_address(file);
-	return filesys_create(file,initial_size);
+	lock_acquire(&filesys_lock);
+	bool success = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+	return success;
 }
 
 bool remove(const char *file){
@@ -278,30 +281,34 @@ void close (int fd) {
 	if(fileobj == NULL)
 		return;
 	//file_close(fd);
-	curr->fdt[fd] = 0; /* 파일 디스크립터 엔트리 초기화 */
+	process_close_file(fd);/* 파일 디스크립터 엔트리 초기화 */
 }
 
-void *mmap (void *addr, size_t length, int writable, int fd, off_t offset){
-	if(offset % PGSIZE != 0){
-		return NULL;
-	}
-	if(fd == 0 || fd == 1){
-		exit(-1);
-	}
-	struct file *fileobj = process_get_file(fd);
 
-	if(fileobj == NULL){
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+	struct file *file = process_get_file(fd);
+	if (file == NULL)
 		return NULL;
-	}
-	if(length == 0 || KERN_BASE <= length || addr == NULL || is_kernel_vaddr(addr) || pg_round_down(addr) != addr){
+	if (file_length(file) == 0)
 		return NULL;
-	}
-	if (spt_find_page(&thread_current()->spt, addr)) {
-        return NULL;
-	}
-	return do_mmap(addr,length,writable,fileobj,offset);
+	if (!length || (int)length < 0)
+		return NULL;
+	if (addr == 0)
+		return NULL;
+	if (fd < 2)
+		return NULL;
+	if (offset % PGSIZE)
+		return NULL;
+	if (is_kernel_vaddr(addr))
+		return NULL;
+	if (addr != pg_round_down(addr))
+		return NULL;
+	if (spt_find_page(&thread_current()->spt, addr))
+		return NULL;
+
+	return do_mmap(addr, length, writable, file, offset);
 }
-
 void munmap (void *addr){
 	do_munmap(addr);
 }

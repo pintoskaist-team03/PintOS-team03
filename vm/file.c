@@ -9,8 +9,6 @@ static bool file_backed_swap_in (struct page *page, void *kva);
 static bool file_backed_swap_out (struct page *page);
 static void file_backed_destroy (struct page *page);
 
-struct lock file_lock;
-
 /* DO NOT MODIFY this struct */
 static const struct page_operations file_ops = {
 	.swap_in = file_backed_swap_in,
@@ -22,7 +20,6 @@ static const struct page_operations file_ops = {
 /* The initializer of file vm */
 void
 vm_file_init (void) {
-	lock_init(&file_lock);
 }
 
 /* Initialize the file backed page */
@@ -31,8 +28,8 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
 	page->operations = &file_ops;
 	struct lazy_load_info * arg = (struct lazy_load_info *)page->uninit.aux;
-	struct file_page *file_page = &page->file;
 
+	struct file_page *file_page = &page->file;
 	file_page->file = arg->file;
 	file_page->file_ofs = arg->ofs;
 	file_page->read_bytes = arg->page_read_bytes;
@@ -53,15 +50,15 @@ file_backed_swap_out (struct page *page) {
 /* Destory the file backed page. PAGE will be freed by the caller. */
 static void
 file_backed_destroy (struct page *page) {
-	struct file_page *file_page = &page->file;
 	struct supplemental_page_table *spt = &thread_current()->spt;
-
-	if(pml4_is_dirty(thread_current()->pml4,page->va)){
-		file_write_at(file_page->file,page->va,file_page->read_bytes, file_page->file_ofs);
-		pml4_set_dirty(thread_current()->pml4,page->va,0);
-	}
-	pml4_clear_page(thread_current()->pml4,page->va);
-
+	struct file_page *arg = &page->file;
+		if (pml4_is_dirty(thread_current()->pml4, page->va)){
+			/* 어떤 offset부터 썼는지 확인 후 그 offset부터 write */
+			file_write_at(arg->file, page->va, arg->read_bytes, arg->file_ofs);
+			/* dirty bit 0으로 set */
+			pml4_set_dirty(thread_current()->pml4, page->va, 0);
+		}
+	pml4_clear_page(thread_current()->pml4, page->va);
 }
 
 /* Do the mmap */
@@ -69,15 +66,12 @@ void *
 do_mmap (void *addr, size_t length, int writable,
 		struct file *file, off_t offset) {
 
-	size_t read_bytes = length < file_length(file) ? length:file_length(file);
+	struct file *reopen_file = file_reopen(file); //mmap하는 동안 외부에서 해당 파일을 close()할 경우 예외처리
+
+	size_t read_bytes = length < file_length(reopen_file) ? length:file_length(reopen_file);
 	size_t zero_bytes = read_bytes%PGSIZE ==0 ? 0 : PGSIZE-(read_bytes%PGSIZE);
 	void * start_addr = addr;
 	
-	thread_current()->page_cnt = zero_bytes==0?(read_bytes/PGSIZE):(read_bytes/PGSIZE)+1;
-	//lock_acquire(&file_lock);
-	struct file *reopen_file = file_reopen(file); //mmap하는 동안 외부에서 해당 파일을 close()할 경우 예외처리
-	//lock_release(&file_lock);
-
 	while (read_bytes>0 || zero_bytes > 0)
 	{
 		size_t tmp_read_bytes = read_bytes <PGSIZE ? read_bytes:PGSIZE;
@@ -93,7 +87,9 @@ do_mmap (void *addr, size_t length, int writable,
 		if(!vm_alloc_page_with_initializer(VM_FILE,addr,writable,lazy_load_segment,aux)){
 			return NULL;
 		}
-
+		struct page *p = spt_find_page(&thread_current()->spt, addr);
+		p->page_cnt = read_bytes / PGSIZE + 1;
+		
 		read_bytes -= tmp_read_bytes;
 		zero_bytes -= tmp_zero_bytes;
 		addr += PGSIZE;
@@ -102,25 +98,25 @@ do_mmap (void *addr, size_t length, int writable,
 	return start_addr;
 }
 
+
 /* Do the munmap */
 void
 do_munmap (void *addr) {
-	struct thread *curr = thread_current();
-	struct page *page = spt_find_page(&curr->spt,addr);
-	int num_page =  curr->page_cnt;
-	while(num_page != 0){
-		struct lazy_load_info *tmp_aux = (struct lazy_load_info*)page->uninit.aux;
-		
-		//spt_remove_page(&curr->spt,page); 
-
-		if(pml4_is_dirty(curr->pml4,addr)){
-			file_write_at(tmp_aux->file,addr,tmp_aux->page_read_bytes, tmp_aux->ofs);
-			pml4_set_dirty(curr->pml4,addr,0);
-		}
-		pml4_clear_page(curr->pml4,addr);
-
+	// page의 전체 길이 -> spt_find_page로 해당 addr를 찾아 그 페이지 구조체의 길이 얻어오기
+	struct page *page = spt_find_page(&thread_current()->spt, addr);
+	off_t page_cnt = page->page_cnt;
+	
+	/* 변경된 파일은 쓴 후, dirty bit 원래대로 돌려주기
+	spt 테이블에서 삭제하고 pml4 테이블에서 삭제*/
+	for (int i = 0; i < page_cnt; i++)
+	{
 		addr += PGSIZE;
-		page = spt_find_page(&curr->spt,addr);
-		num_page -= 1;
+		if (page)
+		{
+			/* spt_remove_page -> vm_dealloc_page -> destroy(file_destroy)순으로 호출 */
+			spt_remove_page(&thread_current()->spt, page);		
+		}
+		page = spt_find_page(&thread_current()->spt, addr);
 	}
+	
 }

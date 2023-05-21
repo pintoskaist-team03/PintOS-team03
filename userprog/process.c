@@ -18,10 +18,12 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "include/userprog/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
+#include "userprog/syscall.h"
 #endif
-#define VM
+
 static void process_cleanup (void);
 static bool load (const char *file_name, struct intr_frame *if_);
 static void initd (void *f_name);
@@ -73,10 +75,10 @@ int process_add_file (struct file *f){
 
 void process_close_file(int fd){
 	struct thread *curr = thread_current();
-/* 파일 디스크립터에 해당하는 파일을 닫음 */
-	file_close(curr->fdt[fd]);
-/* 파일 디스크립터 테이블 해당 엔트리 초기화 */
-	curr->fdt[fd] =0;
+	struct file **fdt = curr->fdt;
+	if (fd < 2 || fd >= FDCOUNT_LIMIT)
+		return NULL;
+	fdt[fd] = NULL;
 }
 
 
@@ -299,19 +301,22 @@ process_exec (void *f_name) {
 	process_cleanup ();
 
 	/* And then load the binary */
+	lock_acquire(&filesys_lock);
 	success = load (file_name, &_if);
-
-	void **rspp = &_if.rsp;
-	argument_stack(argv, argc, &_if.rsp);
-	_if.R.rdi = argc;
-	_if.R.rsi = *rspp + sizeof(void *);
+	lock_release(&filesys_lock);
 
 	//hex_dump(_if.rsp, _if.rsp, USER_STACK - (uint64_t)_if.rsp, true);
 	/* If load failed, quit. */
 	if (!success){
 		palloc_free_page (file_name);
 		return -1;
-	}
+	}	
+
+	void **rspp = &_if.rsp;
+	argument_stack(argv, argc, &_if.rsp);
+	_if.R.rdi = argc;
+	//_if.R.rsi = *rspp + sizeof(void *);
+	_if.R.rsi = (char *)_if.rsp + 8;
 
 	palloc_free_page (file_name);
 
@@ -383,15 +388,18 @@ process_exit (void) {
 	 * TODO: Implement process termination message (see
 	 * TODO: project2/process_termination.html).
 	 * TODO: We recommend you to implement process resource cleanup here. */ 
-	//palloc_free_page(curr->fdt); // 메모리 누수
-	palloc_free_multiple(curr->fdt,FDT_PAGES);
-
+	for (int i = 2; i < FDCOUNT_LIMIT; i++)
+	{	if (curr->fdt[i] != NULL)
+			close(i);
+	}
+	palloc_free_multiple(curr->fdt, FDT_PAGES);		
 	file_close(curr->running);
+
+	process_cleanup ();
 
 	sema_up(&curr->wait_sema);
 	sema_down(&curr->free_sema);
 
-	process_cleanup ();
 }
 
 /* Free the current process's resources. */
@@ -511,10 +519,12 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* Open executable file. */
 	file = filesys_open (file_name);
+	
 	if (file == NULL) {
 		printf ("load: %s: open failed\n", file_name);
 		goto done;
 	}
+
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -579,8 +589,9 @@ load (const char *file_name, struct intr_frame *if_) {
 				break;
 		}
 	}
+	t->running = file;	
 	file_deny_write(file);
-	t->running = file;
+	
 	/* Set up stack. */
 	if (!setup_stack (if_))
 		goto done;
@@ -667,7 +678,7 @@ static bool install_page (void *upage, void *kpage, bool writable);
  * Return true if successful, false if a memory allocation error
  * or disk read error occurs. */
 static bool
-load_segment (struct file *file, off_t ofs, uint8_t *upage,
+load_segment(struct file *file, off_t ofs, uint8_t *upage,
 		uint32_t read_bytes, uint32_t zero_bytes, bool writable) {
 	ASSERT ((read_bytes + zero_bytes) % PGSIZE == 0);
 	ASSERT (pg_ofs (upage) == 0);
@@ -747,12 +758,6 @@ install_page (void *upage, void *kpage, bool writable) {
 /* From here, codes will be used after project 3.
  * If you want to implement the function for only project 2, implement it on the
  * upper block. */
-bool
-lazy_file_load_segment(struct page *page, void *aux){
-	return false;
-}
-
-
 // 파일로부터 세그먼트를 메모리에 로드하는 역할
 bool
 lazy_load_segment (struct page *page, void *aux) {
@@ -822,8 +827,7 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
 		/* TODO: Set up aux to pass information to the lazy_load_segment. */
-		struct lazy_load_info *aux = NULL;
-		aux = (struct lazy_load_info*)malloc(sizeof(struct lazy_load_info));
+		struct lazy_load_info *aux  = (struct lazy_load_info*)malloc(sizeof(struct lazy_load_info));
 		aux->file = file;
 		aux->ofs = ofs;
 		aux->page_read_bytes = page_read_bytes;
@@ -837,7 +841,6 @@ load_segment (struct file *file, off_t ofs, uint8_t *upage,
 		read_bytes -= page_read_bytes;
 		zero_bytes -= page_zero_bytes;
 		upage += PGSIZE;
-
 		ofs += page_read_bytes;
 	}
 	return true;
@@ -854,7 +857,7 @@ setup_stack (struct intr_frame *if_) {
 	 * TODO: If success, set the rsp accordingly.
 	 * TODO: You should mark the page is stack. */
 	/* TODO: Your code goes here */
-	if(vm_alloc_page_with_initializer(VM_ANON,stack_bottom,1,NULL,NULL)){ //stack_bottom에 스택 페이지를 할당
+	if(vm_alloc_page(VM_ANON,stack_bottom,1)){ //stack_bottom에 스택 페이지를 할당
 		success = vm_claim_page(stack_bottom);
 		if(success){
 			if_->rsp = USER_STACK;
