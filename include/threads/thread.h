@@ -124,7 +124,6 @@ struct thread {
 
 	/*project3 growth stack*/
 	uintptr_t user_rsp;
-	int page_cnt;
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */

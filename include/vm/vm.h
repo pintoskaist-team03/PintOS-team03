@@ -49,6 +49,8 @@ struct page {
 	/* Your implementation 내가 추가 */
 	struct hash_elem hash_elem;
 	bool writable;
+	uint32_t file_length;
+	off_t page_cnt;
 
 	/* Per-type data are binded into the union.
 	 * Each function automatically detects the current union */
