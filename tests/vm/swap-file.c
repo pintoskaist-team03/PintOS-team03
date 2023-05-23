@@ -42,6 +42,6 @@ test_main (void)
 
     /* Unmap and close opend file */ 
     munmap (map);
-    close (handle);
+   close (handle);
 }
 

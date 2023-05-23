@@ -39,12 +39,46 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
+    if(page == NULL){
+        return false;
+    }
+
+    struct lazy_load_info *aux = (struct lazy_load_info*)page->uninit.aux;
+
+    struct file *file = aux->file;
+    off_t offset = aux->ofs;
+    size_t page_read_bytes = aux->page_read_bytes;
+    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+
+    file_seek(file, offset);
+
+    if(file_read(file, kva, page_read_bytes) != (int)page_read_bytes){
+        return false;
+    }
+
+    memset(kva + page_read_bytes, 0, page_zero_bytes);
+
+    return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
 static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
+
+    if(page==NULL){
+        return false;
+    }
+
+    struct lazy_load_info *aux = (struct lazy_load_info *)page->uninit.aux;
+
+    // dirty check
+    if(pml4_is_dirty(thread_current()->pml4, page->va)){
+        file_write_at(aux->file, page->va, aux->page_read_bytes, aux->ofs);
+        pml4_set_dirty(thread_current()->pml4, page->va, 0);
+    }
+    pml4_clear_page(thread_current()->pml4, page->va);
+
 }
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
@@ -105,11 +139,14 @@ do_munmap (void *addr) {
 	// page의 전체 길이 -> spt_find_page로 해당 addr를 찾아 그 페이지 구조체의 길이 얻어오기
 	struct page *page = spt_find_page(&thread_current()->spt, addr);
 	off_t page_cnt = page->page_cnt;
-	
 	/* 변경된 파일은 쓴 후, dirty bit 원래대로 돌려주기
 	spt 테이블에서 삭제하고 pml4 테이블에서 삭제*/
+	// struct file *tmp_file = &page->file;
+	// off_t origin_offs = file_tell(tmp_file);
+
 	for (int i = 0; i < page_cnt; i++)
 	{
+
 		addr += PGSIZE;
 		if (page)
 		{
@@ -118,5 +155,5 @@ do_munmap (void *addr) {
 		}
 		page = spt_find_page(&thread_current()->spt, addr);
 	}
-	
+	// file_seek(tmp_file,origin_offs);
 }

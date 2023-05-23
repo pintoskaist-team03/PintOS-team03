@@ -298,10 +298,13 @@ bool
 pml4_is_accessed (uint64_t *pml4, const void *vpage) {
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) vpage, false);
 	return pte != NULL && (*pte & PTE_A) != 0;
+	//액세스 비트(PTE_A)가 설정되어 있는지 확인, 엑세스 비트는 페이지가 최근에 액세스되었는지 여부를 나타내는 비트
 }
 
 /* Sets the accessed bit to ACCESSED in the PTE for virtual page
-   VPAGE in PD. */
+   VPAGE in PD. 
+   가상 페이지(VPAGE)에 대한 PML4(Paging Structure)의 페이지 테이블 엔트리(PTE)에서 액세스 비트를 설정하는 역할
+   */
 void
 pml4_set_accessed (uint64_t *pml4, const void *vpage, bool accessed) {
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) vpage, false);
