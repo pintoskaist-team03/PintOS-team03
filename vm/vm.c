@@ -11,7 +11,6 @@
 
 #define USER_STK_LIMIT (1 << 20)
 struct list frame_table;
-struct list_elem* start;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -26,7 +25,6 @@ void vm_init(void)
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
 	list_init(&frame_table);
-	start = list_begin(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -117,12 +115,12 @@ bool spt_insert_page(struct supplemental_page_table *spt UNUSED,
 	return succ;
 }
 
-void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
-{
-	hash_delete(&spt->pages, &page->hash_elem);
-	vm_dealloc_page(page);
-	return true;
-}
+// void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
+// {
+// 	hash_delete(&spt->pages, &page->hash_elem);
+// 	vm_dealloc_page(page);
+// 	return true;
+// }
 
 /* Get the struct frame, that will be evicted. */
 static struct frame *
@@ -130,29 +128,16 @@ vm_get_victim(void)
 {
 	struct frame *victim = NULL;
 	/* TODO: The policy for eviction is up to you. */
-	struct thread *curr = thread_current();
-	struct list_elem *e = start;
+	for (struct list_elem *e = list_begin(&frame_table); e != list_end(&frame_table); e = list_next(e)) {
+		victim = list_entry(e, struct frame, frame_elem);
 
-//첫 번째 for 루프는 리스트의 끝에서 시작하여 리스트의 끝까지를 반복
-	for(start=e;start!=list_end(&frame_table);start=list_next(start)){
-		victim = list_entry(start,struct frame, frame_elem);
-		if(pml4_is_accessed(curr->pml4,victim->page->va)){//최근에 액세스된 프레임인 경우
-			pml4_set_accessed(curr->pml4,victim->page->va,0); //액세스 비트를 해제
-		}
-		else{
+		if (victim->page == NULL)
 			return victim;
-		}
-	}
 
-//두 번째 for 루프는 리스트의 시작에서 시작하여 e 이전까지의 범위를 반복
-	for(start = list_begin(&frame_table); start!=e; list_next(start)){
-		victim = list_entry(start,struct frame, frame_elem);
-		if(pml4_is_accessed(curr->pml4,victim->page->va)){
-			pml4_set_accessed(curr->pml4,victim->page->va,0); 
-		}
-		else{
+		if (!pml4_is_accessed(thread_current()->pml4, victim->page->va))
 			return victim;
-		}
+		
+		pml4_set_accessed(thread_current()->pml4, victim->page->va, 0);
 	}
 	return victim;
 }
@@ -163,7 +148,7 @@ static struct frame *
 vm_evict_frame(void)
 {
 	struct frame *victim = vm_get_victim();
-	list_remove(&victim->frame_elem);
+	//list_remove(&victim->frame_elem);
 	/* TODO: swap out the victim and return the evicted frame. */
 	swap_out(victim->page);
 	return victim;
@@ -187,11 +172,10 @@ vm_get_frame(void)
 	if(kva != NULL){
 		frame->kva = kva;
 	}else{
+		free(frame);
 		frame=vm_evict_frame(); //쫓아냄
-		frame->kva = palloc_get_page(PAL_USER);
-		if (frame->kva == NULL){
-			printf("frame allocation FAIL!!!!!!!!!!!!!!\n");
-		}
+		frame->page = NULL;
+		return frame;
 	}
 
 	list_push_back(&frame_table,&frame->frame_elem);
@@ -208,7 +192,8 @@ static void
 vm_stack_growth(void *addr UNUSED)
 {
 	/* anonymous 페이지를 할당하여 스택 크기를 늘림 */
-	vm_alloc_page_with_initializer (VM_ANON, pg_round_down(addr), 1, NULL, NULL);
+	vm_alloc_page_with_initializer (VM_ANON,addr, 1, NULL, NULL);
+	vm_claim_page(addr);
 }
 
 /* Handle the fault on write_protected page */
@@ -227,14 +212,15 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 	/* TODO: Validate the fault */
 	/* if문으로 not present인지 확인 -> find page*/
 	/* TODO: Your code goes here */
-	if(is_kernel_vaddr(addr)){
+	if(is_kernel_vaddr(addr) || addr==NULL ){
 		return false;
 	}
 
 	if (not_present) {
 		rsp = (user == true)? f->rsp : thread_current()->user_rsp;
 		if (USER_STACK - USER_STK_LIMIT <= rsp - 8 && rsp - 8 <= addr && addr <= USER_STACK) {
-			vm_stack_growth(addr);
+			vm_stack_growth(pg_round_down(addr));
+			return true;
 		}
 		
 		page = spt_find_page(spt, addr);
@@ -253,6 +239,7 @@ bool vm_try_handle_fault(struct intr_frame *f UNUSED, void *addr UNUSED,
 
 	return false;
 }
+
 
 /* Free the page.
  * DO NOT MODIFY THIS FUNCTION. */

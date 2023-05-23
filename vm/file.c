@@ -39,26 +39,21 @@ file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 static bool
 file_backed_swap_in (struct page *page, void *kva) {
 	struct file_page *file_page UNUSED = &page->file;
-    if(page == NULL){
-        return false;
-    }
+	
+	if (page == NULL)
+		return false;
 
-    struct lazy_load_info *aux = (struct lazy_load_info*)page->uninit.aux;
+	struct file *file = file_page->file;
+	off_t offset = file_page->file_ofs;
+	size_t page_read_bytes = file_page->read_bytes;
+	size_t page_zero_bytes = PGSIZE - page_read_bytes;
 
-    struct file *file = aux->file;
-    off_t offset = aux->ofs;
-    size_t page_read_bytes = aux->page_read_bytes;
-    size_t page_zero_bytes = PGSIZE - page_read_bytes;
+	file_seek(file, offset);
+	file_read(file, kva, page_read_bytes);
 
-    file_seek(file, offset);
+	memset(kva + page_read_bytes, 0, page_zero_bytes);
 
-    if(file_read(file, kva, page_read_bytes) != (int)page_read_bytes){
-        return false;
-    }
-
-    memset(kva + page_read_bytes, 0, page_zero_bytes);
-
-    return true;
+	return true;
 }
 
 /* Swap out the page by writeback contents to the file. */
@@ -66,19 +61,17 @@ static bool
 file_backed_swap_out (struct page *page) {
 	struct file_page *file_page UNUSED = &page->file;
 
-    if(page==NULL){
-        return false;
-    }
-
-    struct lazy_load_info *aux = (struct lazy_load_info *)page->uninit.aux;
-
-    // dirty check
-    if(pml4_is_dirty(thread_current()->pml4, page->va)){
-        file_write_at(aux->file, page->va, aux->page_read_bytes, aux->ofs);
-        pml4_set_dirty(thread_current()->pml4, page->va, 0);
-    }
-    pml4_clear_page(thread_current()->pml4, page->va);
-
+	if (page == NULL)
+		return false;
+	
+	if (pml4_is_dirty(thread_current()->pml4, page->va)) {
+		file_write_at(file_page->file, page->va, file_page->read_bytes, file_page->file_ofs);
+		pml4_set_dirty(thread_current()->pml4, page->va, 0);
+	}
+	// page->frame->page = NULL;
+	page->frame = NULL;
+	pml4_clear_page(thread_current()->pml4, page->va);
+	return true;
 }
 
 /* Destory the file backed page. PAGE will be freed by the caller. */
@@ -141,9 +134,6 @@ do_munmap (void *addr) {
 	off_t page_cnt = page->page_cnt;
 	/* 변경된 파일은 쓴 후, dirty bit 원래대로 돌려주기
 	spt 테이블에서 삭제하고 pml4 테이블에서 삭제*/
-	// struct file *tmp_file = &page->file;
-	// off_t origin_offs = file_tell(tmp_file);
-
 	for (int i = 0; i < page_cnt; i++)
 	{
 
@@ -151,9 +141,9 @@ do_munmap (void *addr) {
 		if (page)
 		{
 			/* spt_remove_page -> vm_dealloc_page -> destroy(file_destroy)순으로 호출 */
-			spt_remove_page(&thread_current()->spt, page);		
+			//spt_remove_page(&thread_current()->spt, page);-> 이거 하면 안됨	
+			destroy(page);
 		}
 		page = spt_find_page(&thread_current()->spt, addr);
 	}
-	// file_seek(tmp_file,origin_offs);
 }
