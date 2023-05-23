@@ -6,9 +6,12 @@
 #include "include/lib/kernel/hash.h"
 #include "userprog/process.h"
 #include "include/threads/vaddr.h"
+#include "include/threads/mmu.h"
 
 
 #define USER_STK_LIMIT (1 << 20)
+struct list frame_table;
+struct list_elem* start;
 
 /* Initializes the virtual memory subsystem by invoking each subsystem's
  * intialize codes. */
@@ -22,6 +25,8 @@ void vm_init(void)
 	register_inspect_intr();
 	/* DO NOT MODIFY UPPER LINES. */
 	/* TODO: Your code goes here. */
+	list_init(&frame_table);
+	start = list_begin(&frame_table);
 }
 
 /* Get the type of the page. This function is useful if you want to know the
@@ -72,12 +77,15 @@ bool vm_alloc_page_with_initializer(enum vm_type type, void *upage, bool writabl
 		else if (VM_TYPE(type) == VM_FILE) {
 			uninit_new(new_page, upage, init, type, aux, file_backed_initializer);
 		}
+		else{
+			uninit_new(new_page, upage, init, type, aux, NULL);
+		}
 		// TODO: should modify the field after calling the uninit_new.
 		new_page->writable = writable;
 		/* TODO: Insert the page into the spt. */
 		return spt_insert_page(spt, new_page);
 	}
-	return false;
+//	return false;
 err:
 	return false;
 }
@@ -92,6 +100,7 @@ spt_find_page(struct supplemental_page_table *spt UNUSED, void *va UNUSED)
 	struct hash_elem *e;
 	page->va = pg_round_down(va);
 	e = hash_find (&spt->pages, &page->hash_elem);
+	free(page); //추가!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	return e != NULL ? hash_entry (e, struct page, hash_elem) : NULL;
 }
 
@@ -121,7 +130,30 @@ vm_get_victim(void)
 {
 	struct frame *victim = NULL;
 	/* TODO: The policy for eviction is up to you. */
+	struct thread *curr = thread_current();
+	struct list_elem *e = start;
 
+//첫 번째 for 루프는 리스트의 끝에서 시작하여 리스트의 끝까지를 반복
+	for(start=e;start!=list_end(&frame_table);start=list_next(start)){
+		victim = list_entry(start,struct frame, frame_elem);
+		if(pml4_is_accessed(curr->pml4,victim->page->va)){//최근에 액세스된 프레임인 경우
+			pml4_set_accessed(curr->pml4,victim->page->va,0); //액세스 비트를 해제
+		}
+		else{
+			return victim;
+		}
+	}
+
+//두 번째 for 루프는 리스트의 시작에서 시작하여 e 이전까지의 범위를 반복
+	for(start = list_begin(&frame_table); start!=e; list_next(start)){
+		victim = list_entry(start,struct frame, frame_elem);
+		if(pml4_is_accessed(curr->pml4,victim->page->va)){
+			pml4_set_accessed(curr->pml4,victim->page->va,0); 
+		}
+		else{
+			return victim;
+		}
+	}
 	return victim;
 }
 
@@ -130,10 +162,11 @@ vm_get_victim(void)
 static struct frame *
 vm_evict_frame(void)
 {
-	struct frame *victim UNUSED = vm_get_victim();
+	struct frame *victim = vm_get_victim();
+	list_remove(&victim->frame_elem);
 	/* TODO: swap out the victim and return the evicted frame. */
-
-	return NULL;
+	swap_out(victim->page);
+	return victim;
 }
 
 /* palloc() and get frame. If there is no available page, evict the page
@@ -144,17 +177,29 @@ static struct frame *
 vm_get_frame(void)
 {
 	struct frame *frame = NULL;
-	frame = malloc(sizeof(struct frame));
-
 	/* TODO: Fill this function. */
-	frame->kva = palloc_get_page(PAL_USER);
-	if (frame->kva == NULL) {
-		PANIC("TODO");
-	}
-	frame->page = NULL;
 
-	ASSERT(frame != NULL);
-	ASSERT(frame->page == NULL);
+	//유저 메모리 풀에서 페이지를 성공적으로 가져오면, 
+	//프레임을 할당하고 프레임 구조체의 멤버들을 초기화한 후 해당 프레임을 반환
+	frame = malloc(sizeof(struct frame));
+	void *kva = palloc_get_page(PAL_USER);
+
+	if(kva != NULL){
+		frame->kva = kva;
+	}else{
+		frame=vm_evict_frame(); //쫓아냄
+		frame->kva = palloc_get_page(PAL_USER);
+		if (frame->kva == NULL){
+			printf("frame allocation FAIL!!!!!!!!!!!!!!\n");
+		}
+	}
+
+	list_push_back(&frame_table,&frame->frame_elem);
+
+	frame->page = NULL;
+	ASSERT (frame != NULL);
+	ASSERT (frame->page == NULL);
+
 	return frame;
 }
 
