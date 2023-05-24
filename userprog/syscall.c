@@ -15,12 +15,13 @@
 #include "lib/kernel/stdio.h"
 #include "threads/synch.h"
 #include "userprog/process.h"
+#include "vm/vm.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
 
 void check_address(void *addr);
-void half(void);
+void halt(void);
 void exit(int status);
 tid_t fork (const char *thread_name,struct intr_frame *f);
 int exec (const char *file);
@@ -35,6 +36,10 @@ void seek (int fd, unsigned position);
 unsigned tell (int fd);
 void close (int fd);
 
+/*project3 추가*/
+void *mmap (void *addr, size_t length, int writable, int fd, off_t offset);
+void munmap (void *addr);
+
 /* System call.
  *
  * Previously system call services was handled by the interrupt handler
@@ -47,7 +52,7 @@ void close (int fd);
 #define MSR_STAR 0xc0000081         /* Segment selector msr */
 #define MSR_LSTAR 0xc0000082        /* Long mode SYSCALL target */
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
-struct lock filesys_lock;
+
 void
 syscall_init (void) {
 	write_msr(MSR_STAR, ((uint64_t)SEL_UCSEG - 0x10) << 48  |
@@ -66,6 +71,9 @@ syscall_init (void) {
 void
 syscall_handler (struct intr_frame *f UNUSED) {
 	// TODO: Your implementation goes here.
+	/*p3 - Growth stack*/
+	thread_current()->user_rsp = f->rsp;
+
     switch (f->R.rax) // rax는 system call number이다.
     {
 	case SYS_HALT:
@@ -78,7 +86,7 @@ syscall_handler (struct intr_frame *f UNUSED) {
         f->R.rax = fork(f->R.rdi, f);
         break;
     case SYS_EXEC:
-        exec(f->R.rdi);
+        f->R.rax = exec(f->R.rdi);
         break;
     case SYS_WAIT:
         f->R.rax = process_wait(f->R.rdi);
@@ -110,6 +118,12 @@ syscall_handler (struct intr_frame *f UNUSED) {
     case SYS_CLOSE:
         close(f->R.rdi);
         break;
+	case SYS_MMAP:
+		f->R.rax = mmap(f->R.rdi, f->R.rsi, f->R.rdx, f->R.r10, f->R.r8);
+		break;
+	case SYS_MUNMAP:
+		munmap (f->R.rdi);
+		break;
     default:
         exit(-1);
         break;
@@ -152,14 +166,16 @@ exit state -1을 반환하며 프로세스가 종료됩니다.
 		return -1;
 	
 	NOT_REACHED();
-	return 0;
 }
 int wait (tid_t pid){
 	return process_wait(pid);
 }
 bool create(const char *file, unsigned initial_size){
 	check_address(file);
-	return filesys_create(file,initial_size);
+	lock_acquire(&filesys_lock);
+	bool success = filesys_create(file, initial_size);
+	lock_release(&filesys_lock);
+	return success;
 }
 
 bool remove(const char *file){
@@ -172,13 +188,16 @@ int open (const char *file){
 /* 파일 디스크립터 리턴 */
 /* 해당 파일이 존재하지 않으면 -1 리턴 */
 	check_address(file);
-
+	lock_acquire(&filesys_lock);
 	struct file *fileobj = filesys_open(file);
-	if(fileobj == NULL)
+	if(fileobj == NULL){
+		lock_release(&filesys_lock);
 		return -1;
+	}
 	int fd = process_add_file(fileobj);
 	if(fd == -1) //fd table 꽉참
 		file_close(fileobj);
+	lock_release(&filesys_lock);
 	return fd;
 }
 
@@ -192,31 +211,37 @@ int filesize (int fd){
 	return file_length(fileobj);
 }
 int read (int fd, void *buffer, unsigned size) {
-	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
-/* 파일 디스크립터를 이용하여 파일 객체 검색 */
-/* 파일 디스크립터가 0일 경우 키보드에 입력을 버퍼에 저장 후
-버퍼의 저장한 크기를 리턴 (input_getc() 이용) */
-/* 파일 디스크립터가 0이 아닐 경우 파일의 데이터를 크기만큼 저
-장 후 읽은 바이트 수를 리턴  */ 
+	check_address(buffer);
+
 	lock_acquire(&filesys_lock);
+	if(fd == 1){
+		lock_release(&filesys_lock);
+		return -1;
+	}
+
 	if(fd == 0){
 		input_getc();
 		lock_release(&filesys_lock);
 		return size;
 	}
   	struct file *fileobj= process_get_file(fd);
+	if(fileobj){
+		struct page *page = spt_find_page(&thread_current()->spt,buffer);
+		if(page != NULL && page->writable == 0){
+			lock_release(&filesys_lock);
+			exit(-1);
+		}
+	}
+		
 	size = file_read(fileobj,buffer,size);
 	lock_release(&filesys_lock);	
 	return size;
 }
 
 int write (int fd, const void *buffer, unsigned size) {
-	/* 파일에 동시 접근이 일어날 수 있으므로 Lock 사용 */
-/* 파일 디스크립터를 이용하여 파일 객체 검색 */
-/* 파일 디스크립터가 1일 경우 버퍼에 저장된 값을 화면에 출력
-후 버퍼의 크기 리턴 (putbuf() 이용) */
-/* 파일 디스크립터가 1이 아닐 경우 버퍼에 저장된 데이터를 크기
-만큼 파일에 기록후 기록한 바이트 수를 리턴 */
+
+	check_address(buffer);
+
 	lock_acquire(&filesys_lock);
 	if(fd == 1){
 		 putbuf(buffer, size);  //문자열을 화면에 출력해주는 함수
@@ -252,13 +277,46 @@ unsigned tell (int fd) {
 void close (int fd) {
 	/* 해당 파일 디스크립터에 해당하는 파일을 닫음 */
 	struct thread *curr = thread_current();
-	curr->fdt[fd] = 0; /* 파일 디스크립터 엔트리 초기화 */
+	struct file *fileobj= process_get_file(fd);
+	if(fileobj == NULL)
+		return;
+	//file_close(fd);
+	process_close_file(fd);/* 파일 디스크립터 엔트리 초기화 */
+}
+
+
+void *mmap(void *addr, size_t length, int writable, int fd, off_t offset)
+{
+	struct file *file = process_get_file(fd);
+	if (file == NULL)
+		return NULL;
+	if (file_length(file) == 0)
+		return NULL;
+	if (!length || (int)length < 0)
+		return NULL;
+	if (addr == 0)
+		return NULL;
+	if (fd < 2)
+		return NULL;
+	if (offset % PGSIZE)
+		return NULL;
+	if (is_kernel_vaddr(addr))
+		return NULL;
+	if (addr != pg_round_down(addr))
+		return NULL;
+	if (spt_find_page(&thread_current()->spt, addr))
+		return NULL;
+
+	return do_mmap(addr, length, writable, file, offset);
+}
+void munmap (void *addr){
+	do_munmap(addr);
 }
 
 
 void check_address(void *addr){
 	struct thread *curr = thread_current();
-	if(addr== NULL || !is_user_vaddr(addr)|| pml4_get_page(curr->pml4, addr) == NULL){
+	if(addr== NULL || !is_user_vaddr(addr)){
 		exit(-1);
 	} 
 }

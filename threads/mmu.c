@@ -117,6 +117,8 @@ pt_for_each (uint64_t *pt, pte_for_each_func *func, void *aux,
 	return true;
 }
 
+/*각 pml4가 유효한 entry를 가지고 있는지 검사하며, 검사를 위해 보조값 aux를 받는 함수 func를 추가적으로 활용합니다.
+ va는 entry의 가상주소입니다. pte_for_each_func가 false를 리턴하면, 반복을 멈추고 false를 리턴*/
 static bool
 pgdir_for_each (uint64_t *pdp, pte_for_each_func *func, void *aux,
 		unsigned pml4_index, unsigned pdp_index) {
@@ -296,10 +298,13 @@ bool
 pml4_is_accessed (uint64_t *pml4, const void *vpage) {
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) vpage, false);
 	return pte != NULL && (*pte & PTE_A) != 0;
+	//액세스 비트(PTE_A)가 설정되어 있는지 확인, 엑세스 비트는 페이지가 최근에 액세스되었는지 여부를 나타내는 비트
 }
 
 /* Sets the accessed bit to ACCESSED in the PTE for virtual page
-   VPAGE in PD. */
+   VPAGE in PD. 
+   가상 페이지(VPAGE)에 대한 PML4(Paging Structure)의 페이지 테이블 엔트리(PTE)에서 액세스 비트를 설정하는 역할
+   */
 void
 pml4_set_accessed (uint64_t *pml4, const void *vpage, bool accessed) {
 	uint64_t *pte = pml4e_walk (pml4, (uint64_t) vpage, false);

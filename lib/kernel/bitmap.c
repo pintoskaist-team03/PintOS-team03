@@ -272,6 +272,7 @@ bitmap_scan (const struct bitmap *b, size_t start, size_t cnt, bool value) {
 	ASSERT (b != NULL);
 	ASSERT (start <= b->bit_cnt);
 
+	// b->bit_cnt : b의 총 비트 수
 	if (cnt <= b->bit_cnt) {
 		size_t last = b->bit_cnt - cnt;
 		size_t i;

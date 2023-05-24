@@ -177,17 +177,19 @@ disk_print_stats (void) {
    slave, respectively--within the channel numbered CHAN_NO.
 
    Pintos uses disks this way:
-0:0 - boot loader, command line args, and operating system kernel
-0:1 - file system
-1:0 - scratch
-1:1 - swap
+0:0 - boot loader, command line args, and operating system kernel 부트 로더(boot loader), 명령행 인수(command line arguments) 및 운영 체제 커널(operating system kernel)을 저장
+0:1 - file system 파일 시스템(file system)을 저장
+1:0 - scratch 스크래치(scratch) 공간으로 사용
+1:1 - swap 스왑(swap) 공간으로 사용
 */
 struct disk *
-disk_get (int chan_no, int dev_no) {
+disk_get (int chan_no, int dev_no) { // Pintos에서 특정 디스크에 접근하고 해당 디스크의 정보를 얻을 수 있음
 	ASSERT (dev_no == 0 || dev_no == 1);
 
 	if (chan_no < (int) CHANNEL_CNT) {
 		struct disk *d = &channels[chan_no].devices[dev_no];
+		/*chan_no 값이 유효하고 해당 디스크가 ATA(Advanced Technology Attachment) 
+		디스크인 경우에만 디스크를 반환하고, 그렇지 않은 경우에는 NULL을 반환*/
 		if (d->is_ata)
 			return d;
 	}
