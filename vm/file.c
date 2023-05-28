@@ -27,7 +27,7 @@ bool
 file_backed_initializer (struct page *page, enum vm_type type, void *kva) {
 	/* Set up the handler */
 	page->operations = &file_ops;
-	struct lazy_load_info * arg = (struct lazy_load_info *)page->uninit.aux;
+	struct lazy_load_info *arg = (struct lazy_load_info *)page->uninit.aux;
 
 	struct file_page *file_page = &page->file;
 	file_page->file = arg->file;
@@ -141,8 +141,10 @@ do_munmap (void *addr) {
 		if (page)
 		{
 			/* spt_remove_page -> vm_dealloc_page -> destroy(file_destroy)순으로 호출 */
-			//spt_remove_page(&thread_current()->spt, page);-> 이거 하면 안됨	
+			//spt_remove_page(&thread_current()->spt, page);//-> 이거 하면 안됨	
+			//hash_delete(&thread_current()->spt.pages, &page->hash_elem);
 			destroy(page);
+			//free(page);//-> 이것도 하면 안됨	
 		}
 		page = spt_find_page(&thread_current()->spt, addr);
 	}
