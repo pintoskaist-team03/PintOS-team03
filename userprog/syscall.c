@@ -154,9 +154,10 @@ syscall_handler (struct intr_frame *f UNUSED) {
 		break;
 	case SYS_SYMLINK:
 		f->R.rax = symlink(f->R.rdi, f->R.rsi);
-    default:
-        exit(-1);
-        break;
+		break;
+    // default:
+    //     exit(-1);
+    //     break;
     }
 }
 void halt(void)

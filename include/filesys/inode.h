@@ -30,7 +30,7 @@ struct inode_disk {
 	disk_sector_t start;                /* First data sector. */
 	off_t length;                       /* File size in bytes. */
 	unsigned magic;                     /* Magic number. */
-	// uint32_t unused[125];               /* Not used. */
+	//uint32_t unused[125];               /* Not used. */
 
 	uint32_t is_dir;					// 디렉토리 구분
     uint32_t is_link;                   // symlink 구분

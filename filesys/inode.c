@@ -319,9 +319,9 @@ inode_write_at (struct inode *inode, const void *buffer_, off_t size,
 
 		if (sectors > 0) {
 			static char zeros[DISK_SECTOR_SIZE];
-			cluster_t tmp;
+			cluster_t tmp = inode->data.start;
 			for (int i = 0; i < sectors; i++) {
-				tmp = fat_create_chain(inode->data.start);
+				tmp = fat_create_chain(tmp);
 				disk_write(filesys_disk, cluster_to_sector(tmp), zeros);
 			}
 		}
