@@ -300,6 +300,10 @@ process_exec (void *f_name) {
 	/* We first kill the current context */
 	process_cleanup ();
 
+	#ifdef VM
+        supplemental_page_table_init(&thread_current()->spt);  // 추가!!
+    #endif
+
 	/* And then load the binary */
 	lock_acquire(&filesys_lock);
 	success = load (file_name, &_if);
@@ -399,6 +403,10 @@ process_exit (void) {
 
 	sema_up(&curr->wait_sema);
 	sema_down(&curr->free_sema);
+
+	#ifdef EFILESYS
+    dir_close(thread_current()->cur_dir); // 스레드의 현재 작업 디렉터리의 정보 메모리에서 해지
+    #endif	
 
 }
 

@@ -20,8 +20,8 @@ struct fat_boot {
 struct fat_fs {
 	struct fat_boot bs;
 	unsigned int *fat;
-	unsigned int fat_length;
-	disk_sector_t data_start;
+	unsigned int fat_length; //파일 시스템에 많은 클러스터를 저장
+	disk_sector_t data_start; //파일을 저장할 수 있는 섹터를 저장
 	cluster_t last_clst;
 	struct lock write_lock;
 };
@@ -153,6 +153,12 @@ fat_boot_create (void) {
 void
 fat_fs_init (void) {
 	/* TODO: Your code goes here. */
+	//FAT byte 크기
+	//FAT의 섹터 수 * 512 bytes / cluster당 sector수
+	fat_fs->fat_length = fat_fs->bs.fat_sectors * DISK_SECTOR_SIZE / (sizeof(cluster_t) * SECTORS_PER_CLUSTER);
+
+	//DATA sector가 시작하는 지점
+	fat_fs->data_start = fat_fs->bs.fat_start + fat_fs->bs.fat_sectors;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -165,6 +171,28 @@ fat_fs_init (void) {
 cluster_t
 fat_create_chain (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	cluster_t i = 2;
+	while (fat_get(i) !=0 && i<fat_fs->fat_length)
+	{
+		++i;
+	}
+
+	if (i==fat_fs->fat_length){ //FAT가 가득 찼다면
+		return 0;
+	}
+
+	fat_put(i, EOChain); //fat안의 값 업데이트
+	
+	if(clst == 0){ //새로운 체인 생성
+		return i;
+	}
+
+	while(fat_get(clst) != EOChain){
+		clst = fat_get(clst);
+	}
+	fat_put(clst,i);
+	return i;
+	
 }
 
 /* Remove the chain of clusters starting from CLST.
@@ -172,22 +200,34 @@ fat_create_chain (cluster_t clst) {
 void
 fat_remove_chain (cluster_t clst, cluster_t pclst) {
 	/* TODO: Your code goes here. */
+	cluster_t next;
+	while(fat_fs->fat[clst] != EOChain){
+		next = fat_fs->fat[clst];
+		fat_fs->fat[clst] = 0;
+		clst = next;
+	}
+	if(pclst != 0){
+		fat_fs->fat[pclst] = EOChain;
+	}
 }
 
 /* Update a value in the FAT table. */
 void
 fat_put (cluster_t clst, cluster_t val) {
 	/* TODO: Your code goes here. */
+	fat_fs->fat[clst] = val;
 }
 
 /* Fetch a value in the FAT table. */
 cluster_t
 fat_get (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	return fat_fs->fat[clst];
 }
 
 /* Covert a cluster # to a sector number. */
 disk_sector_t
 cluster_to_sector (cluster_t clst) {
 	/* TODO: Your code goes here. */
+	return fat_fs->data_start + clst;
 }

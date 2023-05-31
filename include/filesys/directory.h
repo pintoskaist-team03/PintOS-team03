@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "devices/disk.h"
+#include "filesys/off_t.h"
+
 
 /* Maximum length of a file name component.
  * This is the traditional UNIX maximum length.
@@ -12,6 +14,21 @@
 #define NAME_MAX 14
 
 struct inode;
+
+/*project4 구조체 위치 변경 .c->.h*/
+/* A directory. */
+struct dir {
+	struct inode *inode;                /* Backing store. */
+	off_t pos;                          /* Current position. */
+};
+
+/* A single directory entry. */
+struct dir_entry {
+	disk_sector_t inode_sector;         /* Sector number of header. */
+	char name[NAME_MAX + 1];            /* Null terminated file name. */
+	bool in_use;                        /* In use or free? */
+};
+
 
 /* Opening and closing directories. */
 bool dir_create (disk_sector_t sector, size_t entry_cnt);
@@ -26,5 +43,8 @@ bool dir_lookup (const struct dir *, const char *name, struct inode **);
 bool dir_add (struct dir *, const char *name, disk_sector_t);
 bool dir_remove (struct dir *, const char *name);
 bool dir_readdir (struct dir *, char name[NAME_MAX + 1]);
+
+/*project4 추가*/
+void dir_seek (struct dir *dir, off_t new_pos);
 
 #endif /* filesys/directory.h */

@@ -115,12 +115,12 @@ bool spt_insert_page(struct supplemental_page_table *spt UNUSED,
 	return succ;
 }
 
-// void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
-// {
-// 	hash_delete(&spt->pages, &page->hash_elem);
-// 	vm_dealloc_page(page);
-// 	return true;
-// }
+void spt_remove_page(struct supplemental_page_table *spt, struct page *page)
+{
+	hash_delete(&spt->pages, &page->hash_elem);
+	vm_dealloc_page(page);
+	return true;
+}
 
 /* Get the struct frame, that will be evicted. */
 static struct frame *
@@ -309,7 +309,7 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,
 	/* src의 supplemental page table를 반복하면서
 	dst의 supplemental page table의 엔트리의 정확한 복사본을 만드세요 */
 	/* 해시 테이블의 요소 하나하나에 대해 action() 을 임의의 순서로 호출합니다.  */
-	struct hash_iterator spt_iterator, dst_iterator;
+	struct hash_iterator spt_iterator;
 	hash_first (&spt_iterator, &src->pages);
 
 	while (hash_next (&spt_iterator)) {
@@ -318,8 +318,6 @@ bool supplemental_page_table_copy(struct supplemental_page_table *dst UNUSED,
 			vm_alloc_page_with_initializer(src_page->uninit.type, src_page->va, src_page->writable, src_page->uninit.init, src_page->uninit.aux);
 			continue;
 		}
-		
-		// vm_claim_page(src_page->va);
 		if (src_page->operations->type == VM_ANON)
 		{
 			vm_alloc_page(src_page->operations->type, src_page->va, src_page->writable);
